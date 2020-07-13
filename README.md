@@ -126,3 +126,563 @@
 - docker-compose run web rails g scaffold review book:references user:references status:integer body:text
 - docker-compose run web rails g scaffold fan_comment author_no:integer name:string body:string deleted:boolean
 - docker-compose run web rails g model memo memoable:references{polymorphic} body:string --fixture==false
+
+# ビュー開発
+
+- フォーム関連のビューヘルパー
+  ![スクリーンショット 2020-06-27 1 28 09](https://user-images.githubusercontent.com/51355545/85879800-f015b580-b815-11ea-99b2-88c77cb69b9f.png)
+
+- フォームヘルパーの分類
+  ![スクリーンショット 2020-06-27 1 34 04](https://user-images.githubusercontent.com/51355545/85880083-65818600-b816-11ea-9334-1915de13251a.png)
+
+- form_for は特定のモデルオブジェクトを編集するのに特化したメソッド
+- form_tag はモデルに関係しない汎用的なフォームを生成するためのメソッド
+
+## form_tag メソッド
+
+- 検索キーワードや条件入力する検索フォームなど
+  ![スクリーンショット 2020-06-27 1 44 11](https://user-images.githubusercontent.com/51355545/85881095-0faddd80-b818-11ea-9bde-9da4497c2d2f.png)
+  ![スクリーンショット 2020-06-27 1 44 21](https://user-images.githubusercontent.com/51355545/85881104-12103780-b818-11ea-9b68-243f8b945d42.png)
+
+* 例
+  ![スクリーンショット 2020-06-27 1 49 04](https://user-images.githubusercontent.com/51355545/85881456-982c7e00-b818-11ea-84c5-ff1bc9a075e2.png)
+
+```ruby
+<%= form_tag( action: :create) do %>
+  <div class ="field">
+    <%= label :book, :isbn %><br/>
+    <%= text_field :book, :isbn, size: 25 %>
+  </div>
+  <div class ="field">
+    <%= label :book, :title %><br/>
+    <%= text_field :book, :title, size: 25 %>
+  </div>...中略
+ <% end %>
+```
+
+```ruby
+def form_tag
+  @book = Book.new
+end
+```
+
+## form_for ヘルパー
+
+```ruby
+<%= form_for(@book) do |f| %>
+  <div class="field">
+    <%= f.label :isbn %>
+    <%= f.text_field :isbn, size: 25 %>
+  </div>
+
+  <div class="field">
+    <%= f.label :title %>
+    <%= f.text_field :title, size: 25 %>
+  </div>
+
+  <div class="actions">
+    <%= form.submit %>
+  </div>
+<% end %>
+```
+
+![スクリーンショット 2020-06-27 2 34 32](https://user-images.githubusercontent.com/51355545/85885132-cc0aa200-b81e-11ea-9787-c3f6ad36f1eb.png)
+![スクリーンショット 2020-06-27 2 34 42](https://user-images.githubusercontent.com/51355545/85885141-cf059280-b81e-11ea-92f9-849b8afc749f.png)
+
+## xxxx_field, text_area, radio_button, check_box
+
+- テキストボックス
+
+```ruby
+<%= f.text_field :isbn, size: 20, maxlength: 25, readonry: true %>
+```
+
+< input size="20" maxlength="25" readonly="readonly" type="text" name="book[isbn]" id ="book\_ isbn"/>
+
+- パスワードボックス
+
+```ruby
+<%= f.password_field :isbn, size: 10, maxlength: 15, disabled: true %>
+```
+
+< input size="10" maxlength="15" disabled="disabled" type="password" name="book[isbn]" id="book_isbn"/>
+
+- テキストエリア
+
+```ruby
+<%= f.text_area :isbn, cols: 40, rows: 10 %>
+```
+
+< textarea cols="40" rows="10" name="book[isbn]" id="book_isbn">
+
+- ラジオボタン
+
+```ruby
+<label><%= f.radio_button :publish, '技術評論社', class: :rd %>技術評論社</label>
+```
+
+<label>< input class="rd" type="radio" value="技術評論社" name="book[publish]" id="book*publish*"/>技術評論社</label>
+
+- チェックボックス
+
+```ruby
+<label><%= f.check_box :dl, { class: 'chk'}, 'yes', 'no' %>ダウンロードあり?</label>
+```
+
+<label>< input name =" book[ dl]" type =" hidden" value =" no" /><input class="chk" type="checkbox" value="yes" name="book[dl]" id="book_dl"/> ダウンロードサンプルあり？ </label >
+
+- ファイル入力ボックス
+
+```ruby
+<%= f.file_field :isbn, size: 10, maxlength: 15 %>
+```
+
+< input size="10" maxlength="15" type="file" name="book[isbn]" id="book_isbn"/>
+
+- 隠しフィールド
+
+```ruby
+<%= f.hidden_field :isbn %>
+```
+
+< input type="hidden" name="book[isbn]" id="book_isbn"/>
+<img width="803" alt="スクリーンショット 2020-06-27 3 22 55" src="https://user-images.githubusercontent.com/51355545/85889829-2e67a080-b827-11ea-80c2-7604cd7bd293.png">
+
+## その他の
+
+![スクリーンショット 2020-06-27 3 34 31](https://user-images.githubusercontent.com/51355545/85889824-2c054680-b827-11ea-9ac6-b45e2c065072.png)
+
+- 色選択ボックス
+
+```ruby
+<%= f.color_field :isbn %>
+```
+
+< input value="#000000" type="color" name="book[isbn]" id="book_isbn"/>
+
+- 日付入力ボックス
+
+```ruby
+<%= f.date_field :published %>
+```
+
+< input type="date" name="book[published]" id="book_published"/>
+
+- 時刻入力ボックス
+
+```ruby
+<%= f.time_field :published %>
+```
+
+< input type="time" name="book[published]" id="book_published"/>
+
+- 日付時刻入力ボックス
+
+```ruby
+<%= f.datetime_field :published %>
+```
+
+< input type="datetime-local" name="book[published]" id="book_published"/>
+
+- 日付時刻入力ボックス(ローカル)
+
+```ruby
+<%= f.datetime_local_field :published %>
+```
+
+< input type="datetime-local" name="book[published]" id="book_published"/>
+
+- 月入力ボックス
+
+```ruby
+<%= f.month_field :published %>
+```
+
+< input type="month" name="book[published]" id="book_published"/>
+
+- 週入力ボックス
+
+```ruby
+<%= f.week_field :published %>
+```
+
+< input type="week" name="book[published]" id="book_published"/>
+
+- メール入力ボックス
+
+```ruby
+<%= f.email_field :isbn, size: 25, maxlength: 30 %>
+```
+
+< input size="25" maxlength="30" type="email" name="book[isbn]" id="book_isbn"/>
+
+- 数値入力ボックス
+
+```ruby
+<%= f.number_field :price, min: 10, max: 10000, step: 30 %>
+```
+
+< input min="10" max="10000" step="10" type="number" name="book[price]" id="book_price"/>
+
+- スライダー
+
+```ruby
+<%= f.range_field :price, min: 0, max: 10000 %>
+```
+
+< input min="0" max="10000" type="range" name="book[price]" id="book_price"/>
+
+- 検索ボックス
+
+```ruby
+<%= f.search_field :isbn, size: 10, maxlength: 15 %>
+```
+
+< input size="10" maxlength="15" type="search" name="book[isbn]" id="book_isbn"/>
+
+- 電話番号入力ボックス
+
+```ruby
+<%= f.telephone_field :isbn, size: 15, maxlength: 20 %>
+```
+
+< input size="15" maxlength="20" type="tel" name="book[isbn]" id="book_isbn"/>
+
+- URL 入力ボックス
+
+```ruby
+<%= f.url_field :isbn, size: 10, maxlength: 15 %>
+```
+
+< input size="10" maxlength="15" type="url" name="book[isbn]" id="book_isbn"/>
+<img width="275" alt="スクリーンショット 2020-06-27 4 05 42" src="https://user-images.githubusercontent.com/51355545/85892224-80122a00-b82b-11ea-8763-fc795a49e522.png">
+
+![スクリーンショット 2020-06-27 4 07 21](https://user-images.githubusercontent.com/51355545/85892335-ba7bc700-b82b-11ea-94c0-59b930395f27.png)
+
+## FormTag ヘルパー
+
+![スクリーンショット 2020-06-27 4 10 53](https://user-images.githubusercontent.com/51355545/85892621-370ea580-b82c-11ea-8681-f5b7165010fa.png)
+
+xxxxx_field_tag は、 text_field_tag、 password_field_tag、 file_field_tag、 hidden_field_tag、 email_field_tag、 number_field_tag、 range_field_tag、 search_field_tag、 telephone_field_tag、 url_field_tag、 color_field_tag、 month_field_tag、 week_field_tag、 date_field_tag、 time_field_tag、 datetime_field_tag、 datetime_local_field_tag
+
+## 選択ボックス
+
+![スクリーンショット 2020-06-27 4 47 11](https://user-images.githubusercontent.com/51355545/85895265-53f9a780-b831-11ea-8a64-e8099d21856a.png)
+![スクリーンショット 2020-06-27 4 47 16](https://user-images.githubusercontent.com/51355545/85895271-578d2e80-b831-11ea-8af2-7e6b87d5a7ba.png)
+
+- 動作確認
+  <img width="169" alt="スクリーンショット 2020-06-27 21 36 30" src="https://user-images.githubusercontent.com/51355545/85922449-49d1ba80-b8be-11ea-982c-d81df345f876.png">
+
+<form class="new_book" id="new_book" action="/books" accept-charset="UTF-8" method="post"><input name="utf8" type="hidden" value="✓"><input type="hidden" name="authenticity_token" value="sVa9XT1CSmwapTWZ4tQRNKdDebFYF9Qn3AuaXp6/DgOtbRhIU1nQTan+XBIGGam8/TMdY3kF5qoKYWy19x+bsA==">
+<select class="pub" name="book[publish]" id="book_publish"><option value="">選択してください</option>
+<option value="技術評論家">技術評論家</option>
+<option value="翔泳社">翔泳社</option>
+<option value="日経BP社">日経BP社</option></select>
+<br>
+<select name="book[publish]" id="book_publish"><option value="1">技術評論社</option>
+<option value="2">翔泳社</option>
+<option value="3">日経BP社</option></select>
+<br>
+<select name="book[publish]" id="book_publish"><option value="1">技術評論社</option>
+<option value="2">翔泳社</option>
+<option value="3">日経BP社</option></select>
+<br>
+<input name="book[publish][]" type="hidden" value=""><select multiple="multiple" name="book[publish][]" id="book_publish"><option value="">選択してください</option>
+<option selected="selected" value="技術評論社">技術評論社</option>
+<option value="翔泳社">翔泳社</option>
+<option value="日経BP社">日経BP社</option></select>
+</form>
+
+## collection_select メソッド
+
+option 要素の情報をデータベースの値をもとに生成する
+select メソッドと異なるのは、引数 collection,value,text の部分。
+引数 collection で<option>要素のもととなるオブジェクト配列を渡し、引数 value と text でどの列を value 属性やテキストをして割り当てるかを指定する。
+
+![スクリーンショット 2020-06-27 21 46 26](https://user-images.githubusercontent.com/51355545/85922609-b0a3a380-b8bf-11ea-943f-97a74cf0b3bc.png)
+
+<img width="127" alt="スクリーンショット 2020-06-27 22 02 58" src="https://user-images.githubusercontent.com/51355545/85922963-0c6f2c00-b8c2-11ea-9d8b-6166ab966c07.png">
+
+## group_collection_select メソッド
+
+選択ボックスで<optgroup>要素を利用し選択肢をグループで分類できる。選択肢が多い場合はグループ化することで選択ボックスが見やすく、また選びやすくある
+grouped_collection_select メソッドを利用するには関連するテーブルと対応するモデル、関連(アソシエーション)が必要。
+
+![スクリーンショット 2020-06-27 22 14 47](https://user-images.githubusercontent.com/51355545/85923144-a5eb0d80-b8c3-11ea-9115-f249f53ad0c5.png)
+
+![スクリーンショット 2020-06-27 22 14 24](https://user-images.githubusercontent.com/51355545/85923146-a84d6780-b8c3-11ea-81e4-8573724b1b93.png)
+
+- undefined method `books' for #<Author:0x00007f33a5579b00>のエラーがでる ActionView::Template::Error (undefined method`books' for #<Author:0x00007f33a5579b00>):
+  1: <%= form_for(@review) do |f| %>
+  2: <%= f.grouped_collection_select :book_id, @authors, :books, :name, :id, :title %>
+  3: <% end %>
+  https://qiita.com/ayies128/items/9d73136f8f3bb9f59b8c
+  上記サイトを見ておそらく has_many が必要なのかと考えたが、それもだめ。
+  それで、実際の実装サンプルを確認したら has_and_belongs_to_many が使われていた
+- has_and_belongs_to_many
+  これは多対多で使う関連付け
+
+* https://railsguides.jp/association_basics.html#has-and-belongs-to-many%E9%96%A2%E9%80%A3%E4%BB%98%E3%81%91
+  <img width="308" alt="スクリーンショット 2020-06-27 23 16 57" src="https://user-images.githubusercontent.com/51355545/85924288-5230f200-b8cc-11ea-82e5-dcbbce1dac39.png">
+  ![スクリーンショット 2020-06-27 23 27 25](https://user-images.githubusercontent.com/51355545/85924533-ecde0080-b8cd-11ea-8f05-e7b76db4cd2e.png)
+  ![スクリーンショット 2020-06-27 23 27 31](https://user-images.githubusercontent.com/51355545/85924514-ce780500-b8cd-11ea-953c-8c0ce46a263d.png)
+
+## モデルと関連付かない選択ボックスを生成する-select_tag メソッド
+
+![スクリーンショット 2020-06-27 23 31 24](https://user-images.githubusercontent.com/51355545/85924602-5fe77700-b8ce-11ea-9573-ac7999616bd8.png)
+![スクリーンショット 2020-06-27 23 31 36](https://user-images.githubusercontent.com/51355545/85924610-64139480-b8ce-11ea-958f-f06f7d8d7c6e.png)
+
+引数 opt_tags は文字列として指定する点に注意
+
+<img width="135" alt="スクリーンショット 2020-06-27 23 39 31" src="https://user-images.githubusercontent.com/51355545/85924813-88bc3c00-b8cf-11ea-96ee-cd777ba93b64.png">
+
+## 配列/ハッシュから生成する options_for_select メソッド
+
+与えられた配列やハッシュから option 要素を生成する。
+![スクリーンショット 2020-06-27 23 45 14](https://user-images.githubusercontent.com/51355545/85924919-45ae9880-b8d0-11ea-91ef-65a091cfa391.png)
+引数 container には配列とハッシュのいずれでも指定できる
+<img width="122" alt="スクリーンショット 2020-06-27 23 50 48" src="https://user-images.githubusercontent.com/51355545/85925064-15b3c500-b8d1-11ea-8cda-ebf8e5cd3159.png">
+
+## データベースから動的に生成する options_from_collection_for_select メソッド
+
+選択肢をデータベースから生成
+![スクリーンショット 2020-06-28 0 00 33](https://user-images.githubusercontent.com/51355545/85925299-6bd53800-b8d2-11ea-874b-1c494e275dc0.png)
+<img width="130" alt="スクリーンショット 2020-06-28 0 04 55" src="https://user-images.githubusercontent.com/51355545/85925376-059ce500-b8d3-11ea-9c39-449a7fa1a0f8.png">
+
+## グループ分けされた選択肢を生成する option_groups_from_collection_for_select メソッド
+
+grouped_collection_select の select_tag 版
+![スクリーンショット 2020-06-28 0 23 00](https://user-images.githubusercontent.com/51355545/85925752-8eb51b80-b8d5-11ea-88fd-171910462e18.png)
+<img width="299" alt="スクリーンショット 2020-06-28 0 24 05" src="https://user-images.githubusercontent.com/51355545/85925775-b1473480-b8d5-11ea-9871-06b72d05adf3.png">
+
+## 日付/時刻選択のための選択ボックスを生成する slect メソッド
+
+![スクリーンショット 2020-06-28 1 16 06](https://user-images.githubusercontent.com/51355545/85926848-31bd6380-b8dd-11ea-8ea2-2fe0cae3e695.png)
+![スクリーンショット 2020-06-28 1 16 21](https://user-images.githubusercontent.com/51355545/85926850-34b85400-b8dd-11ea-9152-a337ab7dec88.png)
+![スクリーンショット 2020-06-28 1 16 12](https://user-images.githubusercontent.com/51355545/85926852-37b34480-b8dd-11ea-8582-7542b0e7fb7f.png)
+
+## データベースの情報をもとにラジオボタン/チェックボックスの生成 collection_radio_buttons / collection_check_boxes メソッド
+
+<img width="157" alt="スクリーンショット 2020-06-28 12 43 58" src="https://user-images.githubusercontent.com/51355545/85937278-0ff3c900-b93d-11ea-9ddd-6610c7a578c1.png">
+
+## その他のフォーム系ヘルパー
+
+- label メソッド
+  ![スクリーンショット 2020-06-28 12 49 49](https://user-images.githubusercontent.com/51355545/85937383-e25b4f80-b93d-11ea-803c-b4f76cbd08be.png)
+- submit メソッド
+  ![スクリーンショット 2020-06-28 12 50 36](https://user-images.githubusercontent.com/51355545/85937413-50a01200-b93e-11ea-973d-59d8b7d1e8e6.png)
+  <img width="764" alt="スクリーンショット 2020-06-28 12 58 25" src="https://user-images.githubusercontent.com/51355545/85937505-1b47f400-b93f-11ea-87fa-dacdcc384c53.png">
+  <img width="197" alt="スクリーンショット 2020-06-28 12 58 09" src="https://user-images.githubusercontent.com/51355545/85937511-28fd7980-b93f-11ea-9757-67d33106a642.png">
+  - <%= form.submit '保存', data: { confirm: '保存してもいいですか？', disable_with: '処理中'} %>
+    update アクション中の sleep 命令は、指定された秒数だけ処理を休止する。
+    処理が一瞬で終わってしまうと disable_with オプションで指定したテキストの表示が確認できない
+    そのため、ダミー処理時間を発生させている
+    実際に submit ボタンの OK を押下するとサブミットボタンが無効になり、かつキャプションが[処理中...]になる
+  - また submit ボタンは保存済みであるかどうかを判定し、[Create モデル名],[Update モデル名]のようなキャプションを表示する。
+    ![スクリーンショット 2020-06-28 13 11 49](https://user-images.githubusercontent.com/51355545/85937680-f5bbea00-b940-11ea-9a52-7752291ee698.png)
+
+## form_for ブロックの中で異なるモデルを編集する-fields_for メソッド
+
+- form_for ブロックの配下では、モデルを固定して入力フォームを生成するのが基本。
+  fields_for メソッドを利用することで、複数のモデルを対象とした複合フォームを生成することもできる。
+  ![スクリーンショット 2020-06-28 13 38 17](https://user-images.githubusercontent.com/51355545/85938070-aa0b3f80-b944-11ea-9c7c-1d1f146d78db.png)
+  <img width="261" alt="スクリーンショット 2020-06-28 14 13 15" src="https://user-images.githubusercontent.com/51355545/85938584-944c4900-b949-11ea-85b9-2af9d572d8aa.png">
+
+* field_for メソッドは form_for ブロックの配下で利用することを目的としたビューヘルパー
+  ![スクリーンショット 2020-06-28 14 15 53](https://user-images.githubusercontent.com/51355545/85938782-26a11c80-b94b-11ea-9000-a599f58c10c5.png)
+* 引数 var として@user.author を渡している。
+  また,field_set_tag というメソッドを利用している。このメソッドはフォーム要素をグループ化するためのメソッド。サブフォームを表現するのに利用する。
+  ![スクリーンショット 2020-06-28 14 23 55](https://user-images.githubusercontent.com/51355545/85938761-05d8c700-b94b-11ea-8d0a-d06e3344648c.png)
+
+# 文字列/数値関連のビューヘルパー
+
+## 改行文字列を p/br 要素で置き換えるー simple_format メソッド
+
+- simple_format メソッドは与えられた文字列
+
+  1. 文字列全体を p 要素で囲む
+  1. 単一の改行文字には br を付与
+  1. 連続した改行文字には/p p を付与
+
+* simple_format メソッドを利用することで、改行文字を含むテキストをブラウザー上でも正しく表示できるようになる
+  ![スクリーンショット 2020-06-28 14 42 04](https://user-images.githubusercontent.com/51355545/85939084-97e1cf00-b94d-11ea-8de0-f291dece20d8.png)
+  ![スクリーンショット 2020-06-28 14 42 17](https://user-images.githubusercontent.com/51355545/85939085-9a442900-b94d-11ea-9266-07046d1f4902.png)
+  <img width="303" alt="スクリーンショット 2020-06-28 15 12 54" src="https://user-images.githubusercontent.com/51355545/85939600-de392d00-b951-11ea-8235-6e18853a53ba.png">
+
+## 引数 opts を利用した場合
+
+- 太字のコードを書き換えて、動作オプション(引数 opts)を追加
+  { sanitize: false, wrapper_tag: 'blockquote'}
+  上記のようにすることで段落が p 要素ではなく blockquote 要素で囲まれている
+  <img width="354" alt="スクリーンショット 2020-06-28 15 22 00" src="https://user-images.githubusercontent.com/51355545/85939804-4a686080-b953-11ea-912d-96e4f5309888.png">
+  <img width="449" alt="スクリーンショット 2020-06-28 15 22 09" src="https://user-images.githubusercontent.com/51355545/85939805-4b998d80-b953-11ea-9b2f-2edaf7f3d658.png">
+
+## 文字列を指定桁で切り捨てる truncate メソッド
+
+- 投稿記事やメール本文をリスト表示するような状況で、タイトルだけを見ても内容がわかりにくいけれども、いちいち本文を開いて確認するのは面倒な場合によく使う。
+  一覧に本文の先頭から 100 文字表示したい場合に使えるのが truncate メソッド。与えられた文字列を特定の桁数で切り捨てた結果を返す。
+  ![スクリーンショット 2020-06-28 15 32 15](https://user-images.githubusercontent.com/51355545/85940015-e6469c00-b954-11ea-8182-32812e57df57.png)
+
+  - truncate(msg, length: 50)
+    変数 msg の内容を末尾の省略文字を含めて 50 文字になるように無条件に切り捨てる。
+    <img width="488" alt="スクリーンショット 2020-06-28 15 44 11" src="https://user-images.githubusercontent.com/51355545/85940339-a385c380-b956-11ea-92a0-00ea33fcb647.png">
+
+  * truncate(msg, length: 50, separator: '。')
+    length オプションで指定した文字が登場するもっとも長い範囲で文字列を切り捨てる。
+    <img width="456" alt="スクリーンショット 2020-06-28 15 44 17" src="https://user-images.githubusercontent.com/51355545/85940343-a5e81d80-b956-11ea-9689-16330fe07ec1.png">
+
+  * truncate(msg, length: 50, omission: '...後略...')
+    omission オプションはでは切り捨てた文字列の末尾に任意の文字列を指定することができる
+    <img width="468" alt="スクリーンショット 2020-06-28 15 44 25" src="https://user-images.githubusercontent.com/51355545/85940345-a84a7780-b956-11ea-81c0-f6fc1ea6d561.png">
+
+## 文字列からの特定の部分のみを抜粋する excerpt メソッド
+
+- excerpt メソッドは文字列から特定の文字列を中心に、前後の文字列を抜き出す。
+  よく似たメソッドに truncate メソッドもあるが、truncate メソッドが文字数で引用箇所を決めるのに対して、excerpt メソッドは特定のキーワードで決めるため、引用の目的がはっきりしている場合、より的確に抜粋できるメリットがある。
+  ![スクリーンショット 2020-06-28 15 56 36](https://user-images.githubusercontent.com/51355545/85940628-75a17e80-b958-11ea-8a08-fa1fdc636fbf.png)
+  ![スクリーンショット 2020-06-28 15 56 41](https://user-images.githubusercontent.com/51355545/85940631-7803d880-b958-11ea-8c9a-e34d3f0b4b32.png)
+  - excerpt(msg, 'Catalyst', radius: 10)
+    <img width="328" alt="スクリーンショット 2020-06-28 15 59 15" src="https://user-images.githubusercontent.com/51355545/85940638-83570400-b958-11ea-80ea-8daa4135eaf5.png">
+    変数 msg から
+  * excerpt(msg, 'Rails', radius: 10)
+    <img width="174" alt="スクリーンショット 2020-06-28 15 59 21" src="https://user-images.githubusercontent.com/51355545/85940641-8651f480-b958-11ea-8dc2-e6ce9fe4c9cf.png">
+  * excerpt(msg, 'Catalyst', radius: 10, omission: '～')
+    <img width="324" alt="スクリーンショット 2020-06-28 15 59 26" src="https://user-images.githubusercontent.com/51355545/85940642-894ce500-b958-11ea-8885-f14d361564c1.png">
+
+## テーブルやリストの背景色を n 行おきに変更する cycle メソッド
+
+- HTML のテーブルを１行おきに背景色を変えるときに便利
+
+  <img width="475" alt="F4j%AwikSg+EEQN4GEAwcA_thumb_50.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/0b9af1a8-cbbf-5cb6-f6cb-62dd90e7a935.jpeg">
+
+  hello/list.html
+
+```ruby
+<tr style="background-color:<%= cycle('#FFffFF', '#FFff99')%>">
+```
+
+<img width="767" alt="スクリーンショット 2020-07-13 23.32.11.png" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/9413ff85-982a-d9b8-150f-64abd1295813.png">
+
+```ruby
+<tr style="background-color:<%= cycle('#FFffFF', '#FFff99','#FFaabb')%>">
+```
+
+<img width="743" alt="スクリーンショット 2020-07-13 23.33.50.png" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/f4e152b3-81f2-fdc2-2207-7c9f9e206a52.png">
+
+- また現在の値を取得する current_cycle メソッドもある
+
+  <img width="474" alt="qaiUGgccRSq5H9ESz+Le4A_mini_51.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/a72a457b-b9ce-eebe-e7bb-d56c4ab78b89.jpeg">
+
+```ruby
+<td style="background-color:<%= cycle('#FFffFF', '#FFff99')%>"><%= book.title %></td>
+<td style="background-color:<%= current_cycle %>"><%= book.price %></td>
+```
+
+<img width="753" alt="スクリーンショット 2020-07-13 23.43.54.png" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/55e69738-d883-830d-bd84-28a66ea4dd4a.png">
+
+- サイクルを初期化する reset_cycle メソッドも用意されている
+
+## 特定のキーワードをハイライト表示 highlight メソッド
+
+- highlight メソッドを利用すると、文字列に含まれる特定の文字をハイライト表示できる
+
+<img width="454" alt="neRGIF9sR4eP85ciG%FNjw_thumb_52.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/0fc394fd-917c-7432-746a-22c19f6add0f.jpeg">
+
+<img width="748" alt="スクリーンショット 2020-07-14 0.28.31.png" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/67df397f-e81e-c9fb-5958-1e6bc6c2465a.png">
+
+## スクリプトブロックの中に出力コードを埋め込む concat メソッド
+
+- 以下のような単調な文を一文で表現できる
+
+```ruby
+<%= book.price %>
+<% if book.price >= 3000 %>
+  <%= image_tag 'expensive.gif' %>
+<% end %>
+```
+
+上記を以下のようにできる
+
+```ruby
+<%= book.price %>円
+<% if book.price >= 3000
+  concat image_tag 'expensive.gif'
+end %>
+```
+
+## 文字列から要素を除去する sanitize メソッド
+
+- 引数 opts には tags/attributes キーで、それぞれ除去しない要素/属性を指定できる
+
+<img width="467" alt="sAmtEzbYTAKUOa7y6VyLSw_mini_53.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/bfc3e0ad-d722-b2f2-5b13-5502f711ec74.jpeg">
+
+## 文字列を整形する sprintf メソッド
+
+- sprintf メソッドは指定された書式文字列に基づいて文字列を整形するためのメソッド
+
+  rails ビューヘルパーではなく、ruby 標準の組み込みメソッド
+
+<img width="468" alt="Jcb7mvCmRqGkPAKVxEDViA_mini_54.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/bd9a3435-4f5c-ee5f-973e-22f72bb98ede.jpeg">
+
+```ruby
+<%= sprintf('%.10s：全店舗数%d件の月総売り上げ%.1f千円、店舗平均は%10.3f千円です。', @name, @shop, @sum, @sum / @shop) %>
+```
+
+<img width="607" alt="スクリーンショット 2020-07-14 1.01.49.png" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/b9e89336-0ebf-ba3f-f248-c81fdae9e8b7.png">
+
+<img width="517" alt="QTUAvNqvRcuyzXn3IGpiKw_thumb_55.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/351ab7cb-beac-3c65-0cf0-5e0a357aac80.jpeg">
+
+<img width="512" alt="tcnoMgDOROCGTtjnk3hiow_thumb_56.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/7191ab2a-4eee-4a2f-5ad5-4bbb64e88eb9.jpeg">
+
+- %.10f は文字列を最大 10 桁で表示しなさいという意味。@name の「WINGS プロジェクト有限会社」の 10 桁で「WINGS プロジェクト」が表示されている
+
+- %d は整数での表示
+
+- %.1f は小数点以下の桁数を指定したもの。なので小数点 1 桁まで表示されている
+
+- %10.3f は符号と小数点を含め 10 桁で、小数点が 3 桁となる。
+
+  10 桁足りない場合は空白が入る。
+
+  もし 0 で埋めたい場合は%101.3f のようにする
+
+- 数値を様々な形式で加工する number_xxxx メソッド
+
+<img width="505" alt="B76YoBj7S66SDs4aLp+jQw_thumb_57.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/5f736533-6267-0c6f-57d8-986b7e778802.jpeg">
+
+<img width="519" alt="S1dwWokgSc6Qxik0KiFPtg_thumb_58.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/e0baecb6-fe28-100e-bcd4-0960adf3ea68.jpeg">
+
+- number_to_currency メソッドのデフォルトの通貨は「\$」、小数点以下桁数も 2 桁
+
+- number_to_human メソッド。デフォルトでは桁数に応じて thousand、million などの表記が付与
+
+  日本語対応のためには最低でも units パラメーターの設定は必須
+
+  million パラメーターに対して「百万」という表記を割り当てている。
+
+  もちろん、必要に応じて表 415 のパラメーターをハッシュ形式で渡すことも可能。
+
+* number_to_human_size／number_to_percentage メソッドは、値に応じて KB、MB...のような単位、または「%」表記で値を表示。
+
+* number_with_delimiter メソッドは、数値そのものの丸めは行わず、桁区切り文字や小数点の変更を行いたい場合に利用
+
+* number_with_precision メソッドは指定された桁数で数値の丸めや表記を統一するためのメソッド
+
+  単位を伴わない汎用的なメソッドなので、数値加工ではもっとも利用する機会が多
+
+* precision／significant パラメーターの例。
+
+  significant パラメーターは precision パラメーターの挙動を制御するためのパラメーター。
+
+  false（または省略）時、precision パラメーターの値は小数点以下の桁数を表すものと見なされるので、不足桁を補った 123.45670 が返される。
+
+  一方、significant パラメーターが true の場合、precision パラメーターは全体桁数（有効桁数）を表すものと見なされる。
+
+  よって、整数部＋小数部が 5 桁となるよう丸められた 123.46 が返されます。
+
+  strip_insignificant_zeros パラメーターは末尾の 0 を切り捨てる例。この場合、precision パラメーターが 5 なので、デフォルトでは 123.40000 のようになるはずが、0 が切り落とされた結果、123.4 が返される。
+
+## 日付データを形成する strftime メソッド
+
+<img width="485" alt="0wagLz9OSgOcFuUPnwiyWQ_thumb_59.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/62b836a7-9315-a2e5-ce68-992bb5433b1e.jpeg">
+<img width="493" alt="PClbHpP0TS2DRR%qgt+kdw_thumb_5a.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/8b25b143-2541-e504-ad02-03d3c764a113.jpeg">

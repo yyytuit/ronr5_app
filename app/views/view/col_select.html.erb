@@ -1,0 +1,4 @@
+<%= form_for(@book) do |f| %>
+  <%= f.collection_select :publish, @books, :publish, :publish %>
+<% end %>
+<%= select_tag('publish', options_from_collection_for_select(@books, :publish, :publish, '技術評論社'))%>
