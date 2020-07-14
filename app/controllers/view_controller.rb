@@ -1,4 +1,7 @@
 class ViewController < ApplicationController
+  def detail
+  end
+
   def select
     @book = Book.new(publish: '技術評論社')
   end
@@ -42,5 +45,9 @@ class ViewController < ApplicationController
 
   def conc
     @books = Book.all
+  end
+
+  def default_url_options(options = {})
+    { charset: 'utf-8' }
   end
 end

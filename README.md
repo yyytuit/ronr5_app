@@ -686,3 +686,250 @@ end %>
 
 <img width="485" alt="0wagLz9OSgOcFuUPnwiyWQ_thumb_59.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/62b836a7-9315-a2e5-ce68-992bb5433b1e.jpeg">
 <img width="493" alt="PClbHpP0TS2DRR%qgt+kdw_thumb_5a.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/8b25b143-2541-e504-ad02-03d3c764a113.jpeg">
+
+# リンク関連のビューヘルパー
+
+## ハイパーリンクを生成する link_to メソッド
+
+<img width="484" alt="rFV2gFQzQu2Aj95Cc6BJlA_thumb_5b.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/0e7f6c9e-d618-7bb1-46cb-8d14094edd1b.jpeg">
+<img width="493" alt="noC6lsOuSGGFtI2yKL%o4A_thumb_5c.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/04c4d05b-fcf7-cb65-0318-c19c4c277db5.jpeg">
+
+```ruby
+<%= link_to 'サポートサイト', 'http://www.wings.msn.to/' %>
+```
+
+- 上記はシンプルな link_to メソッド。
+
+  引数 body/url で指定されたリンクテキスト、URL に基づいて、アンカータグを生成する
+
+  ただし外部リンクを link_to メソッドにする意味はあまりない。
+
+```ruby
+<%= link_to 'トップ', { controller: :hello, action: :index },
+  id: :link, class: :menu %>
+```
+
+- 上記のようにコントローラ名(controller)/アクション名(action)から動的に URL を生成するのが一般的。
+
+  引数 url はハッシュ形式で指定。
+
+  ハッシュキーについては以降で後述。
+
+  また引数 html_opt を指定した例でもある。
+
+```ruby
+<%= link_to '削除', book_path(1),
+  { method: :delete, data: { confirm: '削除しても良いですか？'} } %>
+```
+
+- また上記のように引数 url を自動生成されたビューヘルパーで指定することもできる。
+
+```ruby
+<% @book = Book.find(1) %>
+<%= link_to book_path(@book) do
+  image_tag "http://www.wings.msn.to/books/#{@book.isbn}/#{@book.isbn}.jpg"
+end %>
+</a>
+```
+
+- 上記はリンクテキストをブロックで表した例。リンクテキストを動的に生成する場合に利用する。
+
+# ルート定義から動的に URL を生成する url_for メソッド
+
+- url_for メソッドは引数に与えられたオプション情報から URL 文字列を生成する。
+
+  テンプレートで url_for メソッドを利用する機会は少ないが、link_to メソッドの引数指定は url_for メソッドのそれに準じる。
+
+<img width="497" alt="lSPNm5ZBTMqNztrneIoHhw_thumb_5d.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/a688d5ad-99d3-de58-0a65-4214f2bebc16.jpeg">
+
+```ruby
+<%= url_for(action: :new) %><br />
+```
+
+- url_for メソッドは現在のコンテキスト(コントローラー名やアクション名、その他パラメータ)を基点に URL を生成する。
+
+  上記のように action 名だけ指定した場合にはコントローラ名は現在のもの(ここでは view を使う)
+
+```ruby
+<%= url_for(controller: :books, action: :show, id: 5,
+  anchor: 'rails', charset: 'utf8') %><br />
+```
+
+- 上記は id/anchor/charset などのパラメータを指定した例。
+
+  id はルート定義(/books/:id(.:format))に含まれているので、そのまま URL の一部として取り込まれる。
+
+  anchor パラメータはアンカー(「#~」の部分)として URL の末尾に付与される。
+
+  予約パラメータでもなく、ルート定義にも含まれていないパラメータ、charset のようなパラメータが指定された場合、クエリ情報として追加される。
+
+```ruby
+<%= url_for(action: :login, controller: :members,
+  only_path: false, protocol: 'https') %><br />
+```
+
+- 上記は only_path パラメータを false にした例。
+
+  url_for メソッドはデフォルトでサイトルートからの相対パスを生成するが、only_path パラメータを false に指定することで、プロトコル/ホスト名を含んだ絶対パスを返す。
+
+```ruby
+<% @book = Book.find(2) %>
+<%= url_for(@book) %><br />
+```
+
+- url_for メソッドには上記のようにオブジェクトを引き渡すこともできる。
+
+  オブジェクトの主キー値に応じて「/books/2」のようなパスが生成される。
+
+```ruby
+<%= url_for(:back) %>
+```
+
+- url_for メソッドの特殊な用法で、引数に:back を指定した場合、url_for メソッドは Refere ヘッダー(todo)の値を返す。
+
+  Refere ヘッダーの値が空のとき「javascript:history.back()」という JavaScript 擬似プロトコルを返す。
+
+<img width="270" alt="スクリーンショット 2020-07-14 22.58.22.png" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/ef4ead91-c436-b0e0-0fa8-8d42a2c1ad75.png">
+
+### 補足
+
+- コントローラ側で default_url_option メソッドをオーバライドすることで、url_for メソッドにデフォルトで渡すパラメータを指定できる。
+
+  /view_contoroller.rb
+
+```ruby
+def default_url_options(options = {})
+    { charset: 'utf-8' }
+  end
+```
+
+- 結果は以下のようになる
+
+<img width="405" alt="スクリーンショット 2020-07-14 23.03.58.png" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/ec4e06f1-aff0-9a90-4f6e-37e302a95539.png">
+
+## 条件に応じてリンクを生成する link_to_if/link_to_unless
+
+- link_to メソッドの派生系として、条件式の正否に応じてリンクを生成する link_to_if/link_to_unless メソッドがある。
+
+<img width="491" alt="c18PfVWPT%G8%x40zFbEsw_thumb_5f.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/141773b2-a804-b79c-b388-9c7eada0cb7c.jpeg">
+
+- link_to_if メソッドは引数 condition が true の場合にはアンカータグを、false の場合には引数 name に基づいて固定テキストのみを出力する。
+
+  ただし、引数&block(ブロック)を指定した場合には、引数 name に代わりにブロックの内容を出力する。
+
+  link_to_unless メソッドは、link_to_if メソッドとは逆に、引数 condition が false の場合にアンカータグを出力する。
+
+```ruby
+<%= link_to_if @user.nil?, 'ログイン',
+  controller: :login, action: :index %><br />
+```
+
+- 上記は変数@user がからの場合に「ログイン」リンクを生成する。
+
+* 上記と同じ内容を unless で表すと下記
+
+```ruby
+<%= link_to_unless @user, 'ログイン',
+controller: :login, action: :index %><br />
+```
+
+```ruby
+<%= link_to_if @user.nil?, 'ログイン',
+controller: :login, action: :index do |name|
+link_to 'マイページ', controller: :login, action: :info
+end %>
+```
+
+- 上記はブロックを定義した例。
+
+  @user.nil?が false の場合、テキストではなく、ブロックで指定されたリンクを出力する。
+
+  ブロック変数として引数 name がわたされる。
+
+  よって@user が空の場合はログインリンクを、そうでない場合はマイページリンクを出力する。
+
+## 現在のページの場合はリンクを無効にする link_to_unless_current メソッド
+
+- link_to_unless メソッドの特殊形として、link_to_unless_current メソッドがある。
+
+  これはリンク先が現在のページである場合にリンクの代わりにテキストのみを出力する。
+
+  レイアウト上で共通なメニュなどを生成する場合に便利なメソッド
+
+<img width="474" alt="ISZpOWQRTKyJiJzSwKTsrw_thumb_5e.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/ecf70b75-7c93-b668-ebe6-7fdef6b85d97.jpeg">
+
+- 一覧への部分がテキスト化されている
+
+<img width="128" alt="スクリーンショット 2020-07-14 23.33.35.png" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/6a448cc0-83a6-9b07-b0ba-96bed2c30088.png">
+
+## メールアドレスへのリンクを生成する mail_to メソッド
+
+- mail_to メソッドは指定されたメールアドレスに基づいて mailto:リンクを生成する
+
+<img width="482" alt="FH7DRqUNQwuvM6c89Zccdw_thumb_60.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/1b6bb2f6-04ff-ce5a-f33f-875afc840d82.jpeg">
+
+<img width="396" alt="IncMVqeeTrG18azzinYHdA_thumb_61.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/90e774f6-9e66-39f4-d2fc-b8f3effdadc7.jpeg">
+
+- 以下のようになる
+
+<img width="185" alt="スクリーンショット 2020-07-14 23.57.25.png" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/645718fa-62fa-1b19-6b0a-a7f0ce1ce277.png">
+
+- 引数 otp に件名などを指定することができる
+
+<img width="395" alt="スクリーンショット 2020-07-14 23.57.03.png" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/cc7dbc65-9ee6-5f08-ad3c-86f86fb8dc1b.png">
+
+# 外部リソース指定のためのビューヘルパー
+
+- 外部スクリプトやスタイルシート、画像、音声、動画などのリソースを指定する場合、「/images/raisl.png」のようなパスを直接指定するのは好ましくない。
+
+  環境を移行した場合などにリンク切れを起こす原因になる。
+
+  リソース指定の場合は原則として Asset ヘルパーを利用すること。
+
+- Asset ヘルパーはビューヘルパーの中でも<img>,<link>,<script>,<audio>,<video>
+
+  などのリソースを取得するための要素を生成するヘルパーの総称。
+
+- Asset ヘルパーのうち、javascript_include_tag/stylesheet_link_tag メソッドは Asset Pipeline と呼ばれる仕組みと密接に関連しており、以降で後述する
+
+## 画像を表示する image_tag メソッド
+
+- image_tag メソッドは<img>要素を生成するヘルパー
+
+  <img width="507" alt="DVvUscv2RBiITcMo1FdJZQ_thumb_62.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/baed4770-aa7b-2e5d-d871-bb6f960e3ef8.jpeg">
+
+  <img width="196" alt="スクリーンショット 2020-07-15 0.45.32.png" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/66b8ba62-e5d3-cb54-c023-8ea48658fda7.png">
+
+```Ruby
+<%= image_tag 'wings_logo.gif' %><br />
+```
+
+- 引数 src で相対パスが指定された場合に画像ファイルは/app/assets/images フォルダ下に保存されているものとみなし、
+
+  「/assets/wings_logoxxxxx.gif」のようなパスが生成される。
+
+```ruby
+<%= image_tag '/icons/button.gif' %><br />
+```
+
+- 上記のように「/icons/button.gif」のように「/」ではじまるパスで表すことで、/public（公開）フォルダー配下の任意のフォルダーに配置することもできる。
+
+/public/icons フォルダー配下に button.gif が配置されているものと見なされる。
+
+```ruby
+  <%= image_tag 'http://www.web-deli.com/image/linkbanner_s.gif' %><br />
+```
+
+- 画像ファイルが外部サーバーに配置されている場合には、上記のように「http://」形式のURLを指定することも可能。
+
+- また、上記 3 つともに alt オプションが指定されていない。
+
+  この場合、image_tag メソッドは画像ファイルのベース名（ファイル名から拡張子を取り除いたもの）から生成した文字例を alt 属性としてセットする。
+
+```Ruby
+<%= image_tag 'fish.jpg', alt: '沖縄の魚', size: '120x90' %><br />
+
+<%= image_tag 'fish.jpg', alt: '沖縄の魚', width: 120, height: 90 %><br />
+```
+
+- 上記は画像サイズを指定する例です。 size オプションで幅、高さをまとめて指定することもでき、width／height オプションで個別に指定することもできる
