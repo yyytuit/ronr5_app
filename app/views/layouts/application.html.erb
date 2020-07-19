@@ -4,6 +4,14 @@
     <title>App</title>
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
+    <%= auto_discovery_link_tag(:rss, { controller: :books, action: :index, id: :rails },
+    title: 'サーバサイドの学び舎 - WINGS -') %>
+
+    <%#以下の3つのファビコはどれでもOK%>
+    <%#= favicon_link_tag %>
+    <%= favicon_link_tag 'favicon.ico' %>
+    <%#= favicon_link_tag 'fav-icon.png', type: 'image/png' %>
+
 
     <%= stylesheet_link_tag    'application', media: 'all', 'data-turbolinks-track': 'reload' %>
     <%= javascript_include_tag 'application', 'data-turbolinks-track': 'reload' %>

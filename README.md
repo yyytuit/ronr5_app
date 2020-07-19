@@ -886,7 +886,7 @@ end %>
 
   リソース指定の場合は原則として Asset ヘルパーを利用すること。
 
-- Asset ヘルパーはビューヘルパーの中でも<img>,<link>,<script>,<audio>,<video>
+- Asset ヘルパーはビューヘルパーの中でも「img,link,script,audio,video」
 
   などのリソースを取得するための要素を生成するヘルパーの総称。
 
@@ -933,3 +933,52 @@ end %>
 ```
 
 - 上記は画像サイズを指定する例です。 size オプションで幅、高さをまとめて指定することもでき、width／height オプションで個別に指定することもできる
+
+## 音声/動画をブラウザーで再生する audio_tag/video_tag メソッド
+
+- aoudio_tag/video_tag メソッドは<audio>/<video>要素を生成するためのヘルパー
+
+  <audio>要素と<video>要素はいずれも HTML5 で追加された比較的新しい要素.
+
+  Internet Explorer 8 のような古いブラウザでは動作しない。
+
+![スクリーンショット 2020-07-16 0.15.57.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/d9854389-5e4f-9e12-a91e-3a7a4d222853.png)
+![スクリーンショット 2020-07-16 0.16.38.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/eb50b567-b94c-e408-4e27-7c7793b105b1.png)
+![スクリーンショット 2020-07-16 0.16.50.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/1661b1f8-83c8-1671-c2bf-a2b0c174c93f.png)
+
+## ブラウザーのフィード検出機能を有効にする auto_discovery_link_tag メソッド
+
+- RSS フィードや Atom フィード(todo:知らない)を自動検出させるための機能
+
+- 上記もうないのかもしれない
+
+## サイトの Favicon を定義する favicon_link_tag メソッド
+
+- ファビコン(favicon)はサイトに関連付けられたアイコンを指す。
+
+  ブックマークやアドレス欄、タブなどでは、ページタイトルや URL と併せてファビコンが表示される。
+
+  文字列だけの表示より、視認性が良いため、最近では多くのサイトがファビコンに対応している。
+
+  <img width="478" alt="V5zSwY9EQFuA%rUVm+f45g_thumb_64.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/fa0d294f-93f6-b43d-60ca-31366924758d.jpeg">
+  ![スクリーンショット 2020-07-19 15.52.29.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/bb864481-6725-a70f-6f6e-c03640c34281.png)
+  <img width="473" alt="rqD6cf0ERBq4++H2igXU1g_thumb_65.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/62145a71-a367-8dd7-472f-3632fce31a60.jpeg">
+
+* .png 形式の画像を指定する場合は、opt で type パラメータを明示的に書く必要がある。
+
+## 外部リソースのパスを取得する xxxx_path メソッド
+
+- 対応するパスだけを取得したい場合に使用する。
+  <img width="476" alt="VwoGCAD%S0mFBp2ncDh4xA_thumb_66.jpg" src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/a3911c9d-ba8d-b2d9-ae06-90c3b8ddeebf.jpeg">
+
+![スクリーンショット 2020-07-19 16.06.21.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/cc4ec5b2-161d-ae8e-8137-2eeb780a0b60.png)
+
+# その他のビューヘルパー
+
+## 構造化データをダンプ出力する debug メソッド
+
+- テンプレートに渡された配列やオブジェクトの内容を確認するには、debug メソッドを利用すると便利。
+
+  debug メソッドは指定された変数の内容を人間の目にも読みやすい YAML 形式で出力する。
+
+  テンプレートに意図したデータが渡されているかを確認したい場合に重宝する。
