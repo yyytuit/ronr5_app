@@ -50,4 +50,17 @@ class ViewController < ApplicationController
   def default_url_options(options = {})
     { charset: 'utf-8' }
   end
+
+  def adopt
+    render layout: 'sub'
+  end
+
+  def multi
+    render layout: 'layout'
+  end
+
+  def nest
+    @msg = '今日も良い天気です。'
+    render layout: 'child'
+  end
 end

@@ -2,6 +2,10 @@
 <html>
   <head>
     <title>App</title>
+    <!--<title><%= @title ? @title : 'Rails入門' %></title>-->
+    <title><%= @title || 'Rails入門' %></title>
+    <title><%= yield(:title) || 'Rails入門' %></title>
+
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
     <%= auto_discovery_link_tag(:rss, { controller: :books, action: :index, id: :rails },
@@ -18,6 +22,7 @@
   </head>
 
   <body>
-    <%= yield %>
+    <%#= yield %>
+    <%= content_for?(:content) ? yield(:content) : yield %>
   </body>
 </html>

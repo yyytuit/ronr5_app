@@ -982,3 +982,363 @@ end %>
   debug メソッドは指定された変数の内容を人間の目にも読みやすい YAML 形式で出力する。
 
   テンプレートに意図したデータが渡されているかを確認したい場合に重宝する。
+
+![スクリーンショット 2020-07-19 22.13.43.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/719389f3-bbd7-967d-c288-bfe4a3ddc1b2.png)
+
+![スクリーンショット 2020-07-19 22.19.11.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/25f51708-cfa2-78ad-de37-a2b9f8b2f18d.png)
+
+## 出力結果を変数に格納 capture メソッド
+
+- caputure メソッドを利用すると、断片的なテンプレートの結果を変数に格納できる。
+
+  部分テンプレートにするどほどでものないものの、テンプレートの複数箇所で再利用するようなコンテンツを定義するさいに便利
+
+![スクリーンショット 2020-07-19 22.34.32.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/72640d5d-d588-0401-76d1-36fb3da665a4.png)
+
+## 本体を持たない任意の要素を生成する tag メソッド
+
+- 本体を持たない要素を生成するには、tag メソッドを利用する。
+
+![スクリーンショット 2020-07-19 22.41.09.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/b93c8143-82e6-d5f6-6fa1-e0139c1d4fb0.png)
+
+![スクリーンショット 2020-07-19 23.05.23.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/1511a92b-9adc-b352-b7a4-9dea89456aef.png)
+
+## 本体を持つ任意の要素を生成する content_tag メソッド
+
+- 本体を持つ要素を生成するには、content_tag メソッドを使用する。
+
+![スクリーンショット 2020-07-19 23.05.59.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/20b33a66-4e69-1c04-33be-9a5811b0d94a.png)
+
+![スクリーンショット 2020-07-19 23.07.57.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/c21c3aac-abea-fb01-c137-fb3b769c91ed.png)
+
+- 要素の本体は引数 content として指定することも、ブロックとして指定することもできる。
+
+- content_tag メソッドを入れ子にして、改装を持った要素を生成する。
+
+  コードの可読性は低下するので、２〜3 階層程度に留めるのが無難。
+
+# ビューヘルパーの自作
+
+- Rails ではビュー開発を支援するビューヘルパーを標準で数多く提供している。
+
+  しかし、実際にアプリを開発していく上で「このようなヘルパーも欲しい」と思う局面がある。
+
+  そのようなときに、ビューヘルパーを自作することもできる。
+
+## シンプルなビューヘルパー
+
+- ビューヘルパーは、/app/helpers フォルダー配下の xxxx_helper.rb に記述するのが基本。
+
+  たとえばここでは ViewContoroller に対応する view_helper.rb(モジュール)にヘルパーを定義する。
+
+- format_datetime メソッドに注目すると、ビューヘルパーとはいっても単なるメソッド。
+
+  引数として受け取った datetime(日付時刻値)、type(フォーマット種別)をもとに、日付時刻を整形し、戻り値として返すだけ。
+
+![スクリーンショット 2020-07-19 23.34.11.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/6e2921db-da42-f2eb-1812-512f0ab05d3b.png)
+
+- Rails5 のデフォルトでは、/app/helpers フォルダー配下から、application_helper.rb と、現在のコントローラに対応したコントローラ名\_helper.rb だけが呼び込まれる。
+
+  一般的には、アプリ全体で利用するヘルパーは application_helper.rb にコントローラ固有のヘルパーは<コントローラ名>\_helper.rb に記述すると、ヘルパーを管理しやすい。
+
+## HTML 文字列を返すビューヘルパ
+
+- form_tag や image_tag などのように、ビューヘルパの結果として HTML 文字列を返したい場合も多くある。
+
+  content_tag/tag メソッドを利用するのが便利。
+
+- 例えば与えられたオブジェクト配列 collection からプロバティ値(prop)の箇条書きリストを生成する list_tag メソッドの例。
+
+```ruby
+# collection: リストのもととなるオブジェクト配列
+  # prop: 一覧するプロパティ名
+  def list_tag(collection, prop)
+    # <ul>要素を生成
+    content_tag(:ul) do
+      collection.each do |element|
+        # <ul>要素配下の<li>要素を順に生成
+        concat content_tag(:li, element.attributes[prop])
+      end
+    end
+  end
+```
+
+- content_tag メソッドを利用することで、要素配下のテキストは適切にエスケープ処理される。
+
+  もちろん、要素部分はそのまま出力してくれるというメリットがある。
+
+  また複雑な階層構造になった場合も content_tag メソッドのネストで表現できるので、文字列連結での処理に比べると可動性も維持しやすい。
+
+- 文字列処理で記述するとしたら以下になる。
+
+```ruby
+def list_tag2(collection, prop)
+    list = '<ul>'
+    collection.each do |element|
+      list.concat('<li>')
+      list.concat(h element.attributes[prop])
+      list.concat('</li>')
+    end
+    raw list.concat('</ul>')
+  end
+```
+
+- テキスト部分は h メソッドでエスケープ処理し、最終的な結果文字列は raw メソッドでそのまま出力している。
+
+  これはコーディングが面倒なだけでなく、うっかりするとエスケープ漏れの原因にもなる。
+
+![スクリーンショット 2020-07-20 0.52.57.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/6768d3a6-95a5-9500-2e16-31bb654a11eb.png)
+
+## 本体を持つビューヘルパ
+
+- form_tag や content_tag メソッドのように、本体を持つビューヘルパーを定義することもできる。
+
+  次のような構文を持ち blockquote 要素を生成する blockquote_tag メソッドを実装している。
+
+  blockquote 要素は他の文章からの引用を表す。
+
+![スクリーンショット 2020-07-20 0.58.11.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/043dd841-b758-7f70-3398-cb79831b9a10.png)
+
+### ブロックを定義して処理する
+
+- ビューヘルパーの本体を受け取れるようにするには、引数としてブロックを受け取る&block を設置しておく。
+
+ブロック&block の内容を処理しているのは capture メソッド。
+
+capture メソッドは与えられたスクリプトブロックを解釈し、その結果を文字列として返す。
+
+あとはブロックの結果をもとに前項と同じく必要なタグ構造を組み立てていく。
+
+### 任意の属性を受け取る
+
+- もう一つ、サンプルで注目しておきたいのは引数 options。
+
+  ビューヘルパーでは任意の属性を指定したいというケースもある。
+
+  その場合は、サンプルのように引数 options でハッシュを受け取れるようにしておいて、必要に応じて必須の属性(ここでは cite 属性)を結合する。
+
+  「属性名:値」の形式のハッシュはそのまま content_tag メソッドの引数として引き渡すことができる。
+
+# アプリ共通のデザインを定義する レイアウト
+
+- レイアウト、あるいはレイアウトテンプレートはヘッダー、メニュー、フッターのようなサイトの共通レイアウトを定義する。
+
+  いわゆる外枠。
+
+  レイアウトを利用することで以下のような構造のサイトも簡単に実装できる
+
+![スクリーンショット 2020-07-20 1.58.47.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/348c8cd6-2955-2c06-d5ea-715913f8b509.png)
+
+- ヘッダーやフッター、メニューなどアプリ共通の部分はレイアウトとして用意しておき、コンテンツ部分だけをページ単位で作成する。
+
+## レイアウトを適用する様々な方法
+
+- rails では特に何も指定しない場合、/app/views/layouts フォルダー配下の application.html.erb をレイアウトとして適用しようとする。
+
+  application.html.erb はプロジェクトを作成した時点で既にできているはずなので、通常はこれをもとにカスタマイズを進める。
+
+- 実際のアプリでは必ずしもページで 1 つのレイアウトを共有しているとは限らない。
+
+  特定のコントローラやアクション単位でレイアウトを変更したい、そもそもレイアウトを適用したくない、ということもある。
+
+### コントローラ単位でレイアウトを設定する
+
+- コントローラ単位のレイアウトは/app/views/layouts フォルダ配下にコントローラ名.html.erb という名前で保存する。
+
+books コントローラであれば、/app/views/layouts/book.html.erb
+
+コントローラ名.html.erb が存在しない場合は、継承をたどって、親コントローラのレイアウトを適用しようとする。
+
+### コントローラ単位でレイアウトを設定する (layout メソッド)
+
+- layout メソッドを利用すると、コントローラクラスの中で明示的に適用すべきレイアウトを指定できる。
+
+* app/controllers/books_controller.rb
+
+```ruby
+layout'product'
+```
+
+- 上記は app/views/layouts/product.html.erb がコントローラデフォルトのレイアウトとして適用される。
+
+### アクション単位でレイアウトを設定する
+
+- アクション単位でレイアウトを変更するには、render メソッドで layout オプションを指定する
+
+* view_controller
+
+```ruby
+def adopt
+    render layout: 'sub'
+end
+```
+
+- /app/views/layouts/sub.html.erb が adopt アクションのレイアウトとして適用される。
+
+- また render layout オプションまたは layout メソッドで false を指定すると、レイアウト機能を無効化することもできる。
+
+## ページ単位でタイトルを変更する
+
+- レイアウトにも通常のテンプレートファイルと同じく、テンプレート変数を埋め込むことができる。
+
+  なので、ページごとにタイトルを変更するならば、レイアウトを以下のように記述すれば良い。
+
+- layouts/application.html.erb
+
+```
+<!--<title><%= @title ? @title : 'Rails入門' %></title>-->
+<!--<title><%= @title || 'Rails入門' %></title>-->
+<!--<title><%= yield(:title) || 'Rails入門' %></title>-->
+```
+
+- ここではテンプレート変数@title が空(未設定)である場合にはデフォルトの「Rails 入門」を、そうでない場合には@title の値をそれぞれタイトルとして割り当てる。
+
+- provide ヘルパーを利用すると、個々のテンプレートからレイアウト側にタイトルを引き渡すこともできる。
+
+* view/provide.html.erb
+
+```
+<% provide :title, 'provideヘルパーの例' %>
+```
+
+![スクリーンショット 2020-07-20 3.04.15.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/ef858ade-ba0b-8550-53e8-70a7105dacaa.png)
+
+## レイアウトに複数のコンテンツ領域を設置する
+
+- デフォルトのレイアウト(application.html.erb)は、初期状態でコンテンツ領域を 1 つだけしか持っていない。
+
+  ときには複数のコンテンツ領域を持たせたいこともある。
+
+  たとえばメインコンテンツ以外にもヘッダーの一部をページ単位に切り替えたいといったケース。
+
+  ![スクリーンショット 2020-07-20 3.10.45.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/9f3a4662-3f42-5fee-551a-99ddcfd52115.png)
+
+* このようなケースではレイアウトに複数の<%= yield %> を埋め込む。
+
+  たとえば複数の領域を定義したレイアウトの例.
+
+* layouts/layout.html.erb
+
+```
+<!DOCTYPE html>
+<html>
+<head>
+  <title><%= @title ? @title : 'Rails入門' %></title>
+  <%= stylesheet_link_tag "application", media: "all", "data-turbolinks-track" => true %>
+  <%= javascript_include_tag "application", "data-turbolinks-track" => true %>
+  <%= csrf_meta_tag %>
+</head>
+<body>
+ <%= yield :extend_menu %> <!---追加した固定コンテンツ領域--->
+<hr />
+<!--- ...その他の固定コンテンツ... --->
+<hr />
+<%= yield %> <!---デフォルトのコンテンツ領域--->
+</body>
+</html>
+
+```
+
+- 複数のコンテンツ領域を定義する場合には、yeild メソッドの引数として領域名を指定する。
+
+  上の例ではデフォルトのコンテンツ領域と、:extend_menu という名前のコンテンツ領域を定義している。
+
+- このようなレイアウトにたいしてコンテンツを埋め込むには、テンプレートファイルで content_for メソッドを利用する.
+
+* views_controller
+
+```ruby
+def multi
+    render layout: 'layout'
+end
+```
+
+```ruby
+<% content_for :extend_menu do %>
+［<%= link_to '関連情報', action: :relation %>］
+［<%= link_to 'ダウンロード', action: :download %>］
+［<%= link_to 'アンケート', action: :quest %>］
+<% end %>
+<div id="main">
+...コンテンツ本体...
+</div>
+
+```
+
+![スクリーンショット 2020-07-20 3.29.27.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/59dc2ccb-d49c-17c3-3e1c-15b54549eb14.png)
+
+- 上記のように名前付きのコンテンツ領域にセットするコンテンツは content_for ブロックで定義する。
+
+![スクリーンショット 2020-07-20 3.38.19.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/24da7abc-8b28-5187-8405-f1608c88a39b.png)
+
+- [関連情報][ダウンロード][アンケート]リンクを:extend_menu コンテンツとして定義している。
+
+  デフォルトのコンテンツはこれまでと同じく特別な囲みなどを意識することなく、テンプレート直下に記述できる。
+
+## レイアウトを入れ子に配置する
+
+![スクリーンショット 2020-07-20 3.41.56.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/db3ef0a5-811d-06af-baca-45d07330037b.png)
+
+- ヘッダー/フッター部分は企業共通ですが、メニュ部分は事業部門ごとに異なる。
+
+  このようなケースで、それぞれの事業部門レイアウトに企業共通のヘッダーデザインまで持たせるのは望ましくない。
+
+  ヘッダーデザインに変更が生じた場合、すべての事業部門レイアウトを修正する必要がある。
+
+  このような場合はレイアウトを入れ子にすることで、ヘッダー/フッター部分を１つのレイアウトとして管理できる。
+
+  ![スクリーンショット 2020-07-20 3.44.52.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/49967b2c-8cdb-f415-7484-1e3af3595d35.png)
+
+* application.html.erb はアプリ共通のレイアウト、layouts/child.html.erb は入れ子部分のレイアウト、view/nest.html.erb はメインテンプレートを表す。
+
+* application.html.erb
+
+```
+<body>
+<%= content_for?(:content) ? yield(:content) : yield %>
+</body>
+```
+
+![スクリーンショット 2020-07-20 3.52.35.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/8a8c740e-5600-a6c2-7d88-3ea515f3eab7.png)
+
+- rails では本質的な意味でレイアウトのネストに対応しているわけではない。
+
+  レイアウト定義を複数に分割し、呼び出しを工夫することで、ネストを表現していると考え方が良い。
+
+![スクリーンショット 2020-07-20 3.55.41.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/76848bf0-f56e-cc39-e1b5-2f0e26dd746d.png)
+
+- nest アクションは対応するテンプレートとして nest.html.erb を、layout オプションで子レイアウト child.html.erb を呼び出している。
+
+- 子レイアウト child.html.erb に注目してみると、コンテンツが content_for メソッドで定義されていることが確認できる
+
+  テンプレート nest.html.erb で既にデフォルトのコンテンツ(:layout)が暗黙的に使われてしまっているので、区別するために:content を定義している。
+
+  :content の配下では、:layout をインクルードするための yield を呼び出す。
+
+  ここまではほぼ標準的なレイアウトを呼び出すが、ここからさらにレイアウトをネストさせるために必要な記述が child.html.erb の<%= render template: 'layouts/application' %>。
+
+  子レイアウト child.html.erb から親レイアウト application.html.erb を呼び出すためには、render メソッドの template オプションを利用して、明示的に呼び出す必要がある。
+
+  最後は親レイアウト application.html.erb の記述。
+
+  <%= content_for?(:content) ? yield(:content) : yield %>
+
+  content_for?メソッドは指定されたコンテンツが存在するかどうかを判定する。
+
+  ここでは content の有無を確認し、存在する場合は:content を、そうでない場合は標準の:layout を呼び出すようにしている。
+
+  サンプルでは 2 階層のレイアウトだが、3 階層以上のレイアウトを定義することも可能
+
+### コマンドラインから Rails のコードを実行する
+
+- rails runner コマンドを利用すると、Rails 環境をロードした上で、指定のコードを実行できる。
+
+  たとえば、セッションをデータベースで管理している場合、古くなったセッション情報を定期的に破棄するなどの用途で利用する。
+
+  rails runner コマンドを利用するには以下のように文字列として実行したいコマンドを渡すだけ。
+
+  定期的に自動実行したい処理を定義したいときは rails runner コマンドをファイルとして用意した上で、cron などのスケジューラに登録する。
+
+  rails runner 'FanComment.where(deleted: true).delete_all'
+
+  上記は Active Record のメソッドを直接呼び出すが、より複雑な処理を行う場合にはメソッドを準備し、コマンド上て指定するコードはシンプルに記述するべき。
