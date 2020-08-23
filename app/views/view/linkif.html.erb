@@ -1,4 +1,5 @@
 <% @user = User.new %>
+
 <%= link_to_if @user.nil?, 'ログイン',
   controller: :login, action: :index %><br />
 

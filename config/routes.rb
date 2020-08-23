@@ -8,11 +8,15 @@ Rails.application.routes.draw do
   get 'hello/index', to: 'hello#index'
   get 'hello/view'
   get 'hello/list'
+
+  get 'view/keyword'
+  post 'keyword/search'
   get 'view/select'
   get 'view/html5'
   get 'view/field'
   get 'view/form_tag'
   post 'view/create'
+  get 'view/form_for'
   get 'view/col_select'
   get 'view/group_select'
   get 'view/select_tag'
@@ -35,6 +39,7 @@ Rails.application.routes.draw do
   get 'members/login'
 
   get 'view/linkif'
+  get 'login/info'
   get 'view/current'
   get 'view/detail'
   get 'view/mailto'

@@ -1,3 +1,16 @@
 <%= form_for(@book) do |f| %>
-  <%= f.date_select :published, use_month_nunbers: true %>
+  <%= f.date_select :published, use_month_numbers: true %>
+  <%#= f.date_select :published, use_two_digit_numbers: true %>
+  <%#= f.date_select :published, use_short_month: true %>
+  <%#= f.date_select :published, add_month_numbers: true %>
+  <%#= f.date_select :published, use_month_names: %w(一月 二月 三月 四月 五月 六月 七月 八月 九月 十月 十一月 十二月) %>
+  <%#= f.date_select :published, date_separator: ',' %>
+  <%#= f.date_select :published, start_year: 2010, end_year: 2030  %>
+  <%#= f.date_select :published, discard_day: true %>
+  <%#= f.date_select :published, discard_month: true %>
+  <%#= f.date_select :published, discard_year: true %>
+  <%#= f.date_select :published, order: [:month, :day, :year] %>
+  <%#= f.datetime_select :published, include_seconds: true %>
+  <%#= f.date_select :published, default: 3.days.from_now %>
+  <%#= f.date_select :published, prompt: { day: 'Select day', month: 'Select month', year: 'Select year' } %>
 <% end %>
