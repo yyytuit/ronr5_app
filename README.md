@@ -920,7 +920,7 @@ end %>
   <%= image_tag 'http://www.web-deli.com/image/linkbanner_s.gif' %><br />
 ```
 
-- 画像ファイルが外部サーバーに配置されている場合には、上記のように「http://」形式のURLを指定することも可能。
+- 画像ファイルが外部サーバーに配置されている場合には、上記のように「http://」形式の URL を指定することも可能。
 
 - また、上記 3 つともに alt オプションが指定されていない。
 
@@ -1466,3 +1466,1057 @@ end
 - collection + layout オプションを利用することで、コレクションの各要素に対して適用された部分テンプレートの 1 つ 1 つに対して、パーシャルレイアウトを適用できる
 
 ![スクリーンショット 2020-08-01 18.15.12.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/18577cf5-f01d-e003-f5bb-2c874a9aa0ea.png)
+
+# モデル開発
+
+## データ取得の基本 find メソッド
+
+```rb
+def find
+  @books = Book.find([2,5,10])
+  render 'hello/list'
+end
+```
+
+find メソッドでは引数に配列を渡すことで主キー値に一致するレコードを取り出すことができる
+
+## 任意のキー列による検索 find_by メソッド
+
+find_by メソッドは任意の列をキーにテーブルを検索し、ヒットした最初の 1 件を取得する。
+
+```rb
+def find_by
+  @book = Book.find_by(publish: "技術評論社")
+  render 'books/show'
+end
+
+def find_by2
+  @book = Book.find_by(publish: '技術評論社', price: 2980)
+  render 'books/show'
+end
+```
+
+## より複雑な条件での検索を行う クエリメソッド
+
+find や all 以外の複雑な条件式や、ソート、グループ化、範囲抽出、結合など行うためにクエリメソッドがある。
+
+### クエリメソッドの基礎
+
+![スクリーンショット 2020-09-03 0.39.11.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/ea00fe2f-3f16-9fd3-dcf1-d41d084f7bee.png)
+
+上記メソッドは find や find_by などのメソッドと違い、その場ではデータベースにアクセスしない。
+
+条件句を追加した結果を ActiveRecord::Relation オブジェクトとして返すだけ。
+
+そして、結果が必要になったところではじめて、デーザベースに問い合わせる。
+
+これを遅延ロードという。
+
+### 基本的な条件式を設定 where メソッド
+
+where メソッドの簡単な使い方は条件式をハッシュで表現すること。
+
+```rb
+def where
+  @books = Book.where(publish: '技術評論社')
+  render 'hello/list'
+end
+```
+
+その他にも引数の指定を変更することで、さまざまな条件式を表現できる。
+
+![スクリーンショット 2020-09-03 1.14.58.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/22a5078a-ef31-9079-387c-022fb59f05c9.png)
+
+「フィールド名:値」の組を複数指定した場合、条件式は論理積(AND)で連結される。
+
+2 は範囲式(..)を使用することで、BETWEEN 演算子を使っている。
+
+3 のように値を配列で複数指定した場合は、IN 演算子が生成される。
+
+### プレースホルダーによる条件式の生成 where メソッド(2)
+
+ハッシュによる条件式の指定は手軽だが、表現の幅に限界がある。
+
+条件式をプレースホルダー付きの文字列で指定する。
+
+```rb
+def ph1
+  @books = Book.where('publish =? AND price >= ?', params[:publish], params[:price])
+  render 'hello/list'
+end
+```
+
+```
+<%= form_tag action: :ph1 do %>
+  <div class="field">
+    <%= label_tag :publish, '出版社:' %>
+    <%= text_field_tag :publish %>
+  </div>
+  <div class="field">
+    <%= label_tag :plice, '最低価格:' %>
+    <%= text_field_tag :price %>
+  </div>
+  <%= submit_tag '検索' %>
+<% end %>
+```
+
+引数に含まれる「?」がプレースホルダー。
+
+プレースホルダーにセットすべきパラメータ値は第 2 引数以降で指定する。
+
+プレースホルダーを利用することで条件式そのものとパラメータ値とを明確に分離できる。
+
+なので複雑な条件式になった場合でもコードの見通しを維持しやすいというメリットがある。
+
+### 名前付きパラーメターと名前なしパラメーター
+
+where メソッド(2)が名前なしパラメータ。
+
+名前付きパラメータは以下
+
+```rb
+def ph1
+  @books = Book.where('publish = :publish AND price >= :plice', publish: params[:publish], price: params[:price])
+  render 'hello/list'
+end
+```
+
+名前付きパラメータの名前は自由に決めていいが、関係性がわかりやすいように比較対象となるフィールドと同名によるのが一般的。
+
+いずれも値をあとから動的に割り当てるという点では同じ。
+
+ただし、名前付きパラメータはパラメータと値の対応がわかりやすいが、記述は冗長である。
+
+また名前なしパラメータは記述はシンプルだが、パラメータと値の対応関係がわかりにくく、パラメータの草原や順番の変化に影響を受けやすい。
+
+### 否定の条件式を表す-not メソッド
+
+NOT 条件を表現する
+
+```rb
+def not
+  @books = Book.where.not(isbn: params[:id])
+  render 'books/index'
+end
+```
+
+```sql
+SELECT `books`.* FROM `books` WHERE `books`.`isbn` != '978-4-7980-4803-1'
+```
+
+### 条件式を論理和で結合する-or メソッド
+
+```rb
+def where_or
+  @books = Book.where(publish: '技術評論社').or(Book.where('price > 2000'))
+  render 'hello/list'
+end
+```
+
+```sql
+SELECT `books`.* FROM `books` WHERE (`books`.`publish` = '技術評論社' OR (price > 2000))
+```
+
+or メソッドによって 2 個の ActiveRecord::Relation オブジェクトを結合する
+
+ただし結合対象の ActiveRecord::Relation オブジェクトは互換性がなければならない。
+
+したがって、両者は同じモデルで Where 条件式だけが異なる ActiveRecord::Relation でなければならない。
+
+例えば
+
+```rb
+@books = Book.where(publish: '技術評論社').or(Book.where('price > 2000').limit(1))
+```
+
+はエラーになる。理由は Book.where(publish: '技術評論社')と Book.where('price > 2000').limit(1)では絞り込む数が等しくないので、条件に互換性がない
+
+### データを並べ換える -order メソッド
+
+取得したデータを特定のキーでならべかえる
+
+```rb
+def order
+  @books = Book.where(publish: '技術評論社').order(published: :desc)
+  render 'hello/list'
+end
+```
+
+```sql
+SELECT `books`.* FROM `books` WHERE `books`.`publish` = '技術評論社' ORDER BY `books`.`published` DESC
+```
+
+複数のソート式を与えてもよい
+
+```rb
+  @books = Book.where(publish: '技術評論社').order(published: :desc,price: :asc)
+```
+
+### ソート式を上書きする-reorder メソッド(知らなかった)
+
+複数の order メソッドをメソッドチェーンした場合、Rails は両者を連結した ORDER BY 句を生成する
+
+```rb
+def reorder
+  @books = Book.order(:publish).order(:price)
+  render 'books/index'
+end
+```
+
+```sql
+SELECT `books`.* FROM `books` ORDER BY `books`.`publish` ASC, `books`.`price` ASC
+```
+
+しかし、以前のソート式を破棄して、新たにソート式を加えたい場合 reorder メソッドを使う
+
+```rb
+@books = Book.order(:publish).reorder(:price)
+```
+
+```sql
+SELECT `books`.* FROM `books` ORDER BY `books`.`price` ASC
+```
+
+また単に前のソートを打ち消したい場合は reorder メソッドに nil を入れる
+
+```rb
+@books = Book.order(:publish).reorder(nil)
+```
+
+```sql
+SELECT `books`.* FROM `books`
+```
+
+### 取得列を明示的に指定する-select メソッド
+
+Active Record はデフォルトですべての列を取得しようとする
+
+しかし巨大なテーブルで不要な列を無条件で取り出すのはメモリリソースの無駄遣い
+
+select メソッドを使うことで取得列を明示的に指定できる
+
+```ruby
+def select
+  @books = Book.where('price >= 2000').select(:title, :price)
+  render 'hello/list'
+end
+```
+
+```sql
+SELECT `books`.`title`, `books`.`price` FROM `books` WHERE (price >= 2000)
+```
+
+### 重複のないレコードを取得する-distinct メソッド
+
+distinct メソッドは、結果セットから重複した行を除去する。
+
+books テーブルから重複のない出版社情報を取得する例
+
+```rb
+@pubs = Book.select(:publish).distinct.order(:publish)
+```
+
+```sql
+SELECT DISTINCT `books`.`publish` FROM `books` ORDER BY `books`.`publish` ASC
+```
+
+### 特定範囲のレコードだけを取得する-limit/offset メソッド
+
+limit メソッドと offset メソッドを組み合わせることで、特定範囲のレコードだけを取得することができる。
+
+![スクリーンショット 2020-10-10 17.12.34.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/d855aa70-edfa-8f00-f4c5-9150f9a83c7f.png)
+
+以下は 5 件目~7 件目を表示という意味
+
+```rb
+def offset
+  @books = Book.order(published: :desc).limit(3).offset(4)
+  render 'hello/list'
+end
+```
+
+```sql
+SELECT  `books`.* FROM `books` ORDER BY `books`.`published` DESC LIMIT 3 OFFSET 4
+```
+
+![スクリーンショット 2020-10-10 17.17.15.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/642c6ef9-a73b-60cd-454d-5f2405bbd744.png)
+
+![スクリーンショット 2020-10-10 17.18.48.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/4f179766-eec5-b9c2-4391-9d9ff853f327.png)
+
+limit/offset をメソッドを利用することでページング処理を実装することができる。
+例えば 3 件づつ表示する場合
+
+```rb
+def page
+  page_size = 3 # ページ当たりの表示件数
+  page_num = params[:id] == nil ? 0 : params[:id].to_i -1 # 現在のページ数
+  @books = Book.order(published: :desc).limit(page_size).offset(page_size * page_num)
+  render 'hello/list'
+end
+```
+
+全件表示した場合
+
+![スクリーンショット 2020-10-10 17.32.38 2.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/e365a657-589e-8f9a-6e4b-6bf9b1540366.png
+
+2 ページ目を表示した場合(record/page/2)
+
+```sql
+SELECT  `books`.* FROM `books` ORDER BY `books`.`published` DESC LIMIT 3 OFFSET 3
+```
+
+![スクリーンショット 2020-10-10 17.33.13.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/b6173f60-8e53-5300-4c09-d8f011af6fea.png)
+
+### 先頭/末尾のレコードを取得する-first/last メソッド
+
+結果セットの先頭/末尾レコードを取得する場合、より直感的に利用できる first/last メソッドがある
+
+刊行日(published 列)について降順に並べた時に末尾に来るレコードを取得するには以下のようにする。
+
+```rb
+def last
+  @book = Book.order(published: :desc).last
+  render 'books/show'
+end
+```
+
+```sql
+SELECT  `books`.* FROM `books` ORDER BY `books`.`published` ASC LIMIT 1
+```
+
+上記のように降順にしたときの末尾なので、自動的に最適化し、昇順にしたときの先頭を取得している。
+
+ただ、「~.limit(3).last」のように limit メソッドと併用した場合は limit メソッドが優先される。
+
+### データを集計する-group メソッド
+
+特定のキーで結果をグループ化するには group メソッドを利用する。
+
+books テーブルの内容を出版社(publish 列)でグループ化し、出版社ごとの価格の平均値を求める例
+
+```rb
+def groupby
+  @books = Book.select('publish, AVG(price) AS avg_price').group(:publish)
+end
+```
+
+```
+<table>
+  <tr>
+    <th>出版社</th><th>価格</th>
+  </tr>
+  <% @books.each do |book| %>
+    <tr >
+      <td><%= book.publish %></td>
+      <td><%= book.avg_price.round %>円</td>
+    </tr>
+  <% end %>
+</table>
+```
+
+![スクリーンショット 2020-10-10 17.52.52.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/ebdca437-4e96-344f-a419-865587b7f159.png)
+
+SQL 関数は select メソッドから呼び出せる。
+
+select メソッドの中で演算子や関数を利用した場合には、演算列にアクセスできるように AS 句で別名(エイリアス)を付与するのを忘れないようにしなければならない。
+
+select メソッドで宣言されたエイリアスはもともと定義されていた列名と同じく「オボジェクト.エイリアス」の形式でアクセスできる。
+
+```sql
+SELECT publish, AVG(price) AS avg_price FROM `books` GROUP BY `books`.`publish`
+```
+
+### 集計結果をもとにデータを絞り込む-having メソッド
+
+having メソッドを利用することで、集計した結果をもとに、さらにデータを絞り込むことも可能。
+
+例えば group で集計された出版社の平均価格が 2500 円以上である情報を取得する例。
+
+```rb
+def havingby
+  @books = Book.select('publish,AVG(price) AS avg_price').group(:publish).having('AVG(price) >= ?',2500)
+  render 'record/groupby'
+end
+```
+
+```sql
+SELECT publish,AVG(price) AS avg_price FROM `books` GROUP BY `books`.`publish` HAVING (AVG(price) >= 2500)
+```
+
+### 条件句を破壊的に代入する-where!メソッド
+
+Rails4 以降では条件式を破壊的に追加する where!などのメソッドを利用できる。
+
+where!以外にも、order!、select!、limit!、offset!、group!、having!、distinct!などほとんどのクエリメソッドは「！」付きで呼び出すこともが可能。
+
+これらを破壊クエリメソッドなどと呼ぶ。
+
+破壊クエリメソッドを利用することで、複数の文で段階的に条件式を追加する場合にも、変数への再代入が必要ないため、コードをわずかにシンプルにできる。
+
+```rb
+def where2
+  @books = Book.all
+  @books.where!(publish: '技術評論社')
+  @books.order!(:published)
+  render 'books/index'
+end
+```
+
+```sql
+SELECT `books`.* FROM `books` WHERE `books`.`publish` = '技術評論社' ORDER BY `books`.`published` ASC
+```
+
+### クエリメソッドによる条件式を除去する-upscope メソッド
+
+クエリメソッドはその場では実行されず、条件式を積み重ねて最終的に結果が必要になってはじめてクエリが実行される(遅延ロード)
+
+実行するまえであれば、一度追加した条件式を取りけることができる。
+
+where/order/select 条件のうち、where/select を除去する例
+
+```rb
+def unscope
+  @books = Book.where(publish: '技術評論社').order(:price).select(:isbn, :title).unscope(:where. :select)
+  render 'books/index'
+end
+```
+
+```sql
+SELECT `books`.* FROM `books` ORDER BY `books`.`price` ASC
+```
+
+where メソッドで複数の条件を追加した場合には、検索列の単位で女権を削除することができる。
+
+```rb
+def unscope2
+  @books = Book.where(publish: '技術評論社', dl: true).order(:price).unscope(where: :dl)
+  render 'books/index'
+end
+```
+
+```sql
+ SELECT `books`.* FROM `books` WHERE `books`.`publish` = '技術評論社' ORDER BY `books`.`price` ASC
+```
+
+ただし upscope 以降に追加された条件式は除外されない。
+
+### 空の結果セットを取得する-none メソッド
+
+none メソッドを呼び出すと空の結果セットを取得できる。
+
+たとえば、ルートパラメータ経由で all、new、cheap いずれかのキーワードを与えると、「すべての書籍情報」「刊行日の新しい書籍 5 冊」「安い書籍 5 冊」を
+それぞれ返す。
+
+想定以外のキーワードを渡した場合は空の結果を返す。
+
+```rb
+def none
+  case params[:id]
+    when 'all'
+      @books = Book.all
+    when 'new'
+      @books = Book.order('published DESC').limit(5)
+    when 'cheap'
+      @books = Book.order(:price).limit(5)
+    else
+      @books = Book.none
+    end
+  render 'books/index'
+end
+```
+
+@books = Book.none を@books = nil にすると undefined method each for nil:NilClass のようなエラーが発生する。
+
+エラーを回避するには each メソッドを呼び出す前に、変数@books の内容が nil であるかどうかを判定しなければならない。
+
+しかし、none メソッドを利用することで、戻り値は Relation(NullRelation)オブジェクトとなる。
+
+この場合中身がからなだけで、それ自体は結果セットなので、そのまま each メソッドを呼び出してもエラーにならない。
+
+## データ取得のためのその他のメソッド
+
+Active Record では、all/find/クエリメソッドさえ理解していれば、おおよその基本的な取得処理は賄えるはず。
+
+知っておくと便利なメソッドを紹介する。
+
+### 指定列の配列を取得する-pluck メソッド
+
+pluck メソッドを利用することで、指定された列を配列として取得できる。
+
+```rb
+def pluck
+  render plain: Book.where(publish: '技術評論社').pluck(:title, :price)
+end
+```
+
+[["改訂新版 JavaScript 本格入門", 2980], ["Java ポケットリファレンス", 2680], ["Swift ポケットリファレンス", 2780], ["AngularJS アプリケーションプログラミング", 3700]]
+
+### データの存在を確認する-exist?メソッド
+
+データを取得するのではなく、指定されたデータが存在するかどうかだけを確認する場合、exist?メソッドを利用する。
+
+たとえば、出版社(publish 列)が「新評論社」であるデータが存在するかどうかを確認するためのレコードは以下。
+
+```rb
+def exists
+  flag = Book.where(publish: '新評論社').exist?
+  render plain: "存在するか? : #{flag}"
+end
+```
+
+```sql
+ SELECT  1 AS one FROM `books` WHERE `books`.`publish` = '新評論社' LIMIT 1
+```
+
+存在チェックだけなので、実際に発行される SELECT 命令も最低限「与えられた条件で先頭の 1 件、ダミー列のみ」を取得している。
+
+```rb
+Book.exists?(1) # id値が1であるレコードが存在するか
+Book.exists?(['price > ?', 5000]) # price列が5000より大きいレコードが存在するか
+Book.exists?(publish: '技術評論社') # publish列が技術評論社のレコードが存在するか
+Book.exists? #booksテーブルに1件でもデータが存在するか
+```
+
+### よく利用する条件句をあらかじめ準備する-名前付きスコープ
+
+データベース検索のコードを記述していくと、同じような検索条件が登場する。
+
+たとえばユーザーテーブルで性別(sex 列)や年齢(old 列)を管理しているとしたら、成人男性を取り出すために「old >= 20 AND sex = 'male'」のような条件式をなんども記述することになる。
+
+そこで名前付きスコープを使う。
+
+名前付きスコープは特定の条件式やソート式などをあらかじめモデル側で名前付けしておくことで、利用時に名前で呼び出せるようにする仕組み。
+
+名前付きスコープを利用すると、呼び出しのコードがより直感的に記述でき、条件に変更があった場合にも修正箇所を限定できるというメリットがある。
+
+![スクリーンショット 2020-10-10 23.08.28.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/6637af2f-4d97-4f2f-6b1c-b13a9aaae3d2.png)
+
+- 技術評論社の書籍のみを取得する gihyo スコープ
+- 刊行日の新しい順に並べる newer スコープ
+- 刊行日の新しいものから先頭 10 件を取得する top10 スコープ
+
+名前付きスコープはモデルクラス(この場合であれば Book クラス)で定義する
+
+book.rb
+
+```rb
+class Book < ApplicationRecord
+  scope :gihyo, -> { where(publish: '技術評論社')}
+  scope :newer, -> { order(publish: :desc)}
+  scope :top10, -> { newer.limit(10)}
+end
+```
+
+![スクリーンショット 2020-10-10 23.15.14.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/45f8b11a-abce-980a-8aca-70f27aaae1b0.png)
+
+名前付きスコープを定義できたら、コントローラ側から呼び出してみる。
+
+```rb
+def scope
+  @books = Book.gihyo.top10
+  render 'hello/list'
+end
+```
+
+```sql
+SELECT  `books`.* FROM `books` WHERE `books`.`publish` = '技術評論社' ORDER BY `books`.`publish` DESC LIMIT 10
+```
+
+定義済みのスコープをそのままメソッドチェーンとして連鎖させることができる。
+
+何度も利用する条件式はできるだけスコープとしてまとめておくことで、コードを呼びやすくできる。
+
+#### 名前付きスコープはパラメータ化も可能
+
+名前付きスコープには引数を渡すこともできる。
+
+```rb
+scope :whats_new, ->(pub) {where(publish: pub).order(published: :desc).limit(5)}
+```
+
+whats_new スコープは以下のように呼び出せるので、似たような条件句がある場合に、パラメータ化することでスコープを定義せずに済む。
+
+```rb
+@books = Book.whats_new('技術評論社')
+```
+
+```sql
+SELECT  `books`.* FROM `books` WHERE `books`.`publish` = '技術評論社' ORDER BY `books`.`published` DESC LIMIT 5
+```
+
+### デフォルトのスコープを定義する-default_scope メソッド
+
+よくある抽出/ソート条件に名前を付けて、モデル呼び出しのコードをわかりやすくる名前付きスコープに対して、モデル呼び出しの際にデフォルトスコープという機能もある。
+
+たとえばレビュ情報(reviews テーブル)の内容を常に投稿日降順で取り出すのであれば、これを毎回、呼び出しのコードで指定するのは面倒。
+
+しかし、デフォルトスコープを利用すれば、指定された条件が必ず適用されるので、呼び出しのコードがシンプルになる。
+
+reviews テーブルに対して投稿日の降順というデフォルトスコープを適用し、アクションメソッドから実際に呼び出す例。
+
+review.rb
+
+```rb
+default_scope { order(updated_at: :desc) }
+```
+
+```rb
+render plain: Review.all.inspect
+```
+
+```sql
+SELECT  `reviews`.* FROM `reviews` ORDER BY `reviews`.`updated_at` DESC LIMIT 11
+```
+
+updated_at: :desc というソート式を指定しているので、Review.all と指定しても、SQL 命令には自動的に OREDER BY 句が追加される。
+
+デフォルトスコープで指定された条件式は、個別の問い合わせで order/where メソッドを指定した場合でも取り消されることはない。
+
+個別の問い合わせで指定された条件は、order メソッドであれば第 2 キー以降に追加されるだけ、また where メソッドであれば AND 演算子で追加される。
+
+### 検索結果の行数を取得する-count メソッド
+
+```rb
+def count
+  cnt = Book.where(publish: '技術評論社').count
+  render plain: "#{cnt}件です."
+end
+```
+
+```sql
+SELECT COUNT(*) FROM `books` WHERE `books`.`publish` = '技術評論社'
+```
+
+### コードの平均や最大/最小を求める
+
+count メソッドの仲間で以下のようなメソッドも用意されている。
+
+| メソッド     | 概要   |
+| ------------ | ------ |
+| average(col) | 平均値 |
+| minimum(col) | 最小値 |
+| maximum(col) | 最大値 |
+| sum(col)     | 合計値 |
+
+平均値の例は以下。
+
+```rb
+def average
+  price = Book.where(publish: '技術評論社').average(:price)
+  render plain: "平均価格は#{price}円です。"
+end
+```
+
+```sql
+SELECT AVG(`books`.`price`) FROM `books` WHERE `books`.`publish` = '技術評論社'
+```
+
+### 生の SQL 命令を直接指定する-find_by_sql メソッド
+
+ActiveRecord では原則、まずクエリメソッドを利用するべき。
+
+あまりにも複雑な問い合わせは生の SQL 命令で記述した方がかえって分かりやすいという場合がある。
+
+そのようなケースでは find_by_sql メソッドで書き換えた例。
+
+```rb
+def literal_sql
+  @books = Book.find_by_sql(['SELECT publish, AVG(price) AS avg_price FROM books GROUP BY publish HAVING AVG(price) >=?', 2500])
+  render 'record/groupby'
+end
+```
+
+find_by_sql は SQL 命令に精通した人にとっては、手軽に感じるかもしれない。
+
+ただし、Rails ではまずクエリメソッドを利用するのが基本。
+
+find_by_sql メソッドを利用することは、それだけの特定のデータベースに依存する原因になることを理解しなければならない。
+
+## レコードの登録/更新/削除
+
+INSERT(追加)/UPDATE(更新)/DELETE(削除)処理を行う。
+
+### 複数のレコードをまとめて更新する-update_all メソッド
+
+update_all メソッドを利用すると、特定の条件に合致するレコードをまとめて更新できる
+
+```rb
+def update_all
+  cnt = Book.where(publish: '技術評論社').update_all(publish: 'Gihyo')
+  render plain: "#{cnt}件のデータをこうしんしました。"
+end
+```
+
+```sql
+UPDATE `books` SET `books`.`publish` = 'Gihyo' WHERE `books`.`publish` = '技術評論社'
+```
+
+order/limit メソッドを併用することで、「特定の並び順で先頭 n 件のみを更新する」という操作も可能。
+
+たとえばリスト 5-37 は、刊行日(publish 列)が古いもの 5 件について、価格(price 列)を 2 割引きする例。
+
+```rb
+def update_all2
+  cnt = Book.order(:published).limit(5).update_all('price = price * 0.8')
+  render plain: "#{cnt}件のデータを更新しました。"
+end
+```
+
+```sql
+UPDATE `books` SET price = price * 0.8 ORDER BY `books`.`published` ASC LIMIT 5
+```
+
+### レコードを削除する-destroy/delete メソッド
+
+Rails では既存レコードを削除するためのメソッドとして、destroy メソッドと delete メソッドというよく似た 2 種類のメソッドを用意している。
+
+destroy メソッドは books_controller.rb にて以下のように定義した。
+
+```rb
+def destroy
+  @book.destroy
+end
+```
+
+上記はいったんオブジェクトを取得してから削除処理を行うが、これは削除したモデルの内容をあとから参照できるようにするための措置。
+
+もしオブジェクトが不要であるなら、destory をクラスメソッドとして呼び出しても構わない。
+
+```rb
+def destory
+  Book.destory(params[:id])
+end
+```
+
+この場合、内部的には SELECT→DELETE の順で処理が行われる。
+
+```sql
+SELECT "books".*FROM "books" WHERE "books"."id" = ? LIMIT ? [["id",11],["LIMIT",1]]
+DELETE FROM "books" WHERE "books"."id" = ? [["id",11]]
+```
+
+もう一つ delete メソッドも利用してみる
+
+```rb
+def destroy
+  Book.delete(prams[:id])
+end
+```
+
+```sql
+DELETE FROM "books" WHERE "books"."id" = ? [["id",12]]
+```
+
+レコードを削除するという結果は同じだが、SQL 命令のレベルで見てみると、destory メソッドは SELECT→DELETE の順で、delete メソッドは DELETE のみが実行されていることが確認できる。
+
+これはアソシエーションやコールバックという機能を利用したときに現れる。
+
+Acitve Record の機能をきちんと利用したい場合には destroy メソッドを、単純にデータを削除のみを行いたい場合は delete メソッドを利用する使い方になる。
+
+delete メソッドの制約を理解していないうちは、destroy メソッドを優先して利用すること。
+
+### 複数のレコードをまとめて削除する-destory_all メソッド
+
+destory_all メソッドは、特定の条件に合致するレコードをまとめて削除する。
+
+```rb
+def destroy_all
+  Book.where.not(publish: '技術評論社').destroy_all
+  render plain:'削除完了'
+end
+```
+
+```sql
+SELECT "books".*FROM "books" WHERE ("books"."publish"!=?)[["publish","技術評論社"]]
+begin transaction
+DELETE FROM "books" WHERE "books"."id" = ? [["id",2]]
+commit transaction
+begin transaction
+DELETE FROM "books" WHERE "books"."id" = ? [["id",4]]
+...
+```
+
+※ Review モデルと Book モデルはリレーションの関係があるので、Book モデルに has_many :review に dependent: :destroy を記述しなければエラーになる。
+
+### トランザクション処理を実装する-transaction メソッド
+
+トランザクション処理とは、ひとかたまりの処理のこと。
+
+一連の処理が全て成功すればトランザクション処理は成功し、1 つでも失敗すればトランザクション処理は失敗し、それまでに行われた処理も全て無効になる。
+
+たとえば銀行でのお金の振込を単純化すると。
+
+- 振り込み元口座からの出勤
+- 振り込み先口座への入金
+
+から成り立っている。
+
+このような振り込み処理で、出勤には成功したのに(通信の障害などが原因で)入金に失敗してしまったとしたらどうか。
+
+振り込み元口座の残高は減っているのに、振り込み先口座の残高は減っているのに、振り込み先口座の残高は増えないという、おかしな状況になる。
+
+このような不整合はシステム的にあってはならない問題。
+
+入金/出勤という 2 つの処理は「両方成功」するか、「両方失敗」しなければならない。
+
+つまり、入金と出金は関連するひとまとまりの処理、すなわちトランザクションとして扱うべき処理となる。
+
+### 同時実行制御
+
+一般的に web アプリでは同一のレコードに対して複数のユーザーが同時に更新しようとする状況が頻繁に発生する。
+
+![スクリーンショット 2020-10-11 20.52.00.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/be8f490c-0775-14f2-74aa-8c1b0e875de3.png)
+
+ユーザー A/B が同一のレコードを同時に取得している。
+
+この状態でユーザー A→B の順でレコードを更新したらどうなるか。
+
+ユーザー A の変更はなかったものとして無視される。
+
+他のユーザーはもちろん、ユーザー B もユーザ-A による変更があったことを知るすべがない。
+
+このような状況のことを更新の競合という。
+
+Active Record ではこのような競合の発生を防ぐためにオプティミスティック同時実行制御(楽観的同時実行制御)という機能を用意している。
+
+#### 1.テーブルに lock_version 列を追加する
+
+Active Record には、行単位にバージョン番号を持たせることで、更新(競合)の有無を検出するしくみがある。
+
+この場合、対象のテーブルにも、あらかじめバージョンを管理するための lock_version 列を加えておく必要がある。
+
+例えば、以下のような members テーブルを作成する。
+
+| 列名         | データ型 | 概要           |
+| ------------ | -------- | -------------- |
+| name         | string   | 氏名           |
+| email        | string   | メールアドレス |
+| lock_version | integer  | バージョン番号 |
+
+Scaffolding 機能を利用して members テーブルを作成する。
+
+```
+rails g scaffold member name:string email:string lock_version:integer
+```
+
+lock_version 列にはデフォルト値としてあらかじめ 0 をセットしておかなけらばならない。
+
+```rb
+class CreateMembers < ActiveRecord::Migration[5.2]
+  def change
+    create_table :members do |t|
+      t.string :name
+      t.string :email
+      t.integer :lock_version, default: 0
+
+      t.timestamps
+    end
+  end
+end
+```
+
+マイグレーションファイルを実行する。
+
+```
+rails db:migrate
+```
+
+#### 2.オプティミスティック同時実行制御を実装する
+
+オプティミスティック同時実行制御を利用するには、自動生成されたアプリの
+
+app/views/members/\_form.html.erb を以下のように編集する。
+
+```
+<% form.hidden_field :lock_version %>
+上記を追加
+以下を削除
+<div class="field">
+  <%= form.label :lock_version %>
+  <%= form.number_field :lock_version %>
+</div>
+```
+
+lock_version 列の値を隠しフィールドとして受け渡す。
+
+#### 3.オプティミスティック同時実行制御の挙動を確認する
+
+同じレコードに対するメンバー更新画面を 2 つのブラウザーで開いた上で順に更新処理を行う。
+
+すると、あとから更新処理を実行した方のブラウザーでは、エラーが表示される。
+
+![スクリーンショット 2020-10-11 21.58.01.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/bc1a2d99-01a5-ada7-ae5d-2270473eb69d.png)
+
+このように、オプティミスティック同時実行制御では「たぶん競合は起こらないであろう」ことを前提に、データ取得時には何もせずに、更新時に競合をチェックするのが特徴。
+
+それが Optimistic(楽観的)と呼ばれている理由である。
+
+コンソールから SQL を開き lock_version 列がインクリメントされていることを確認する。
+
+```sql
+SELECT lock_version FROM members WHERE id = 1;
+1
+```
+
+lock_version 列は行のバージョンを管理するための列。
+
+Active Record ではデータ取得時のバージョンと更新時のバージョンを比較し、双方が異なっている場合には他のユーザーが更新してしまったとみなし、
+
+競合エラーを発生している。
+
+正しく更新できた場合には lock_version 列をインクリメントし、バージョンを進める。
+
+![スクリーンショット 2020-10-11 22.12.29.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/cee02bb5-4f99-d493-1559-8a2b9a908c33.png)
+
+#### 4.例外検出時のコードを記述する
+
+以上で、最低限のオプティミスティック同時実行制御は動作しているが、例外メッセージがそのまま表示されるのは好ましくないので、例外処理を追加する。
+
+```rb
+def update
+  respond_to do |format|
+    if @member.update(member_params)
+      format.html { redirect_to @member, notice: 'Member was successfully updated.' }
+      format.json { render :show, status: :ok, location: @member }
+    else
+      format.html { render :edit }
+      format.json { render json: @member.errors, status: :unprocessable_entity }
+    end
+  end
+  rescue ActiveRecord::StaleObjectError
+  render plain: '競合エラーが発生しました。'
+end
+```
+
+この状態で同時更新すると競合発生時にエラーメッセージが表示されるようになる。
+
+![スクリーンショット 2020-10-11 22.17.25.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/17267a54-8d6a-1dd3-7b34-30ae456727c0.png)
+
+#### オプティミスティックがうまく動作しない場合
+
+以下のような原因が考えられる。
+
+1. lock_version 列に初期値 0 がセットされていない
+
+1. lock_version 列の値がフォームパラメーターとして送信されていない
+
+1. 設定ファイルで config.active_record.lock_optimistically パラメータが false になっている
+
+### 列挙型のフィールドを定義する-Active Record enums
+
+特定の数値リストに意味を持たせて、データベースに保存したいということはよくない。
+
+reviews テーブルの status フィールドがその列。
+
+status は integer 型の列で、それぞれの値が以下のような意味を持つとする。
+
+| 値  | 意味              |
+| --- | ----------------- |
+| 0   | 下書き(draft)     |
+| 1   | 公開済(published) |
+| 2   | 削除済(deleted)   |
+
+このようなフィールドを操作する際に、0,1,2 という便箋的な数値で操作するよりも、draft、published,deleted のようなキーワードで操作/参照できた方がコードの可読性は改善する。
+
+そのような状況で利用するのが、Active Record enums。
+
+##### 1.status フォールドの初期値を設定する
+
+rails generate コマンドで自動生成したマイクレーションファイルは、ほとんどそのまま利用できるが、最低限、Active Record enums を適用するフィールド(status)にはデフォルト値として 0 をセットしておく必要がある。
+
+```rb
+class CreateReviews < ActiveRecord::Migration[5.2]
+  def change
+    create_table :reviews do |t|
+      t.references :book, foreign_key: true
+      t.references :user, foreign_key: true
+      t.integer :status, default: 0, null: false
+      t.text :body
+
+      t.timestamps
+    end
+  end
+end
+```
+
+##### 2.status フォールドに列挙体を定義する
+
+以下のように列挙体を定義する。
+
+```rb
+class Review < ApplicationRecord
+  # enum型
+  enum status: { draft:0, published:1, deleted:2 }
+end
+```
+
+##### 3.Active Record enums を利用して status フィールドにアクセスする
+
+```rb
+def enum_rec
+  @review = Review.find(1)
+  @review.published!
+  render plain: 'ステータス:' + @review.status
+end
+```
+
+```sql
+UPDATE `reviews` SET `status` = 1, `updated_at` = '2020-10-11 13:46:19' WHERE `reviews`.`id` = 1
+```
+
+Acitive Record enums では、published!、draft!、deleted!のような「enum で定義したキーワード+!」の形式で、status フィールドを設定できる。
+
+また status フィールドにアクセスした場合にも、戻り値は(数値ではなく)キーワードである点に注目。
+
+また@review.published?とすることで、現在のステータス値が published であるかどうかを true/false で得ることもできる。
+
+#### Active Record enums のさまざまな記法
+
+enum の記法には様々な定義の仕方がある。
+
+##### 1.列挙値は配列としても定義できる
+
+```rb
+enum status: [:draft, :published, :deleted]
+```
+
+この場合、データベースには配列のインデックス値がセットされる。
+
+0 スタートの列挙値を定義するならば、配列を利用するとコードがシンプルになる。
+
+ただし、数値を自分で設定できないため、あとから列挙値を追加/削除した場合、既存の値がずれる可能性がある。
+
+一般的には列挙値はハッシュで定義するのが安全。
+
+##### 2.列挙値をスコープとして利用する
+
+たとえば以下のようにするとスタータスが pbulished であるレビューだけ取得できる
+
+```rb
+@reviews = Review.published
+```
+
+この場合の published はスコープとして扱えるので、クエリメソッドを繋げることも可能。
+
+```rb
+@reviews = Review.published.where('updated_at < ?', 6.months.ago)
+```
+
+##### 3.不正な値も削除できる
+
+draft!、pubulished!、deleted!のような更新メソッドを利用する他、シンプルに status フィールドに値を設定することもできる。
+
+```rb
+@review.status = 1
+@review.status = :published
+```
+
+ただし、この場合、列挙値として定義されていない値が設定されると、ArgumentError 例外が発生する。
+
+```
+ArgumentError: 'publi' is not a valid status
+```
+
+### その他の更新系メソッド
+
+![スクリーンショット 2020-10-11 22.17.25.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/68ceb7d6-997f-a915-dbf4-5a88f1d28850.png)

@@ -9,6 +9,7 @@
     <td><%= book.isbn %></td>
     <td><%= book.title %></td>
     <td><%= book.price %>円
+    <%= image_tag 'expensive.gif' if book.price >= 3000 %>
       <% if book.price >= 3000
         concat image_tag 'expensive.gif'
       end %>

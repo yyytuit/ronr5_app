@@ -1,4 +1,5 @@
 Rails.application.routes.draw do
+  resources :members
   resources :fan_comments
   resources :reviews
   resources :authors
@@ -63,4 +64,38 @@ Rails.application.routes.draw do
   get 'view/partial_param'
   get 'view/partial_col'
   get 'view/partial_spacer'
+
+  # 第5章
+  get 'record/find'
+  get 'record/find_by'
+  get 'record/find_by2'
+  get 'record/where'
+  get 'record/keyword'
+  post 'record/ph1'
+  get 'record/not(/:id)' => 'record#not'
+  get 'record/where_or'
+  get 'record/order'
+  get 'record/reorder'
+  get 'record/select'
+  get 'record/select2'
+  get 'record/offset'
+  get 'record/page(/:id)' => 'record#page'
+  get 'record/last'
+  get 'record/groupby'
+  get 'record/havingby'
+  get 'record/where2'
+  get 'record/unscope'
+  get 'record/unscope2'
+  get 'record/none(/:id)' => 'record#none'
+  get 'record/pluck'
+  get 'record/exists'
+  get 'record/scope'
+  get 'record/def_scope'
+  get 'record/count'
+  get 'record/average'
+  get 'record/literal_sql'
+  get 'record/update_all'
+  get 'record/update_all2'
+  get 'record/destroy_all'
+  get 'record/enum_rec'
 end
