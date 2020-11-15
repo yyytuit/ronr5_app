@@ -2520,3 +2520,344 @@ ArgumentError: 'publi' is not a valid status
 ### その他の更新系メソッド
 
 ![スクリーンショット 2020-10-11 22.17.25.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/68ceb7d6-997f-a915-dbf4-5a88f1d28850.png)
+
+## 検証機能の実装
+
+エンドユーザーから入力された値は、まず「正しくないこと」を前提に、アプリは実装されるべき。
+
+善意悪意に関係なく、ユーザーとは間違える生き物だから。
+
+不正な値によってアプリが予期せぬ動作をしたり、例外でクラッシュしてしまったという状況は絶対に避けなければならない。
+
+また悪意あるユーザーが意図的に不正な値を入力することで、データを盗聴/破壊しようと試みるケースも少なくない。
+
+入力値を検証することは攻撃リクスを最小限に抑えるセキュリティーの一環でもある。
+
+もっとも、このような検証機能を 1 から実装するのは、なかなか面倒。
+
+Active Model の Validation 機能を利用することで、必須検証や文字列検証、正規表現検証のようにアプリでよく利用するような検証処理をシンプルなコードで実装できるようになる。
+
+### Active Model で利用できる検証機能
+
+| 検証名       | 検証内容<br>パラメータ                                      | エラーメッセージ<br>意味                           |
+| ------------ | ----------------------------------------------------------- | -------------------------------------------------- |
+| acceptance   | チェックボックスにチェックが入っているか。                  | must be accepted                                   |
+|              | accept                                                      | チェック時の値(デフォルトは 1)                     |
+| confirmation | 2 つのフィールドが正しいか                                  | doesn't match confirmation                         |
+|              | -                                                           | -                                                  |
+| exclusion    | 値が配列/範囲に含まれていないか                             | is reserved                                        |
+|              | in                                                          | 比較対象の配列、または範囲オブジェクト             |
+| inclusion    | 値が配列/範囲に含まれいるか                                 | is not included in the list                        |
+|              | in                                                          | 比較対象の配列、または範囲オブジェクト             |
+| format       | 正規表現パターンに合致しているか                            | is invalid                                         |
+|              | with                                                        | 正規表現パターン                                   |
+| length       | 文字列の長さ(範囲/完全一致)をチェック                       | is too short (minimun is xxx characters)           |
+|              | minimun                                                     | 最小の文字列長                                     |
+|              | maximum                                                     | 最大の文字列長                                     |
+|              | in                                                          | 文字列長の範囲(range 型)                           |
+|              | tokenizer                                                   | 文字列の分割方法(ラムダ式)                         |
+|              | is                                                          | 文字列長(長さが完全に一致していること)             |
+|              | too_long                                                    | maximum パラメーターに違反した時のエラーメッセージ |
+|              | too_short                                                   | minimum パラメータに違反した時のエラーメッセージ   |
+|              | wrong_length                                                | is パラメーターに違反した時のエラーメッセージ      |
+| numericality | 数値の大小/型をチェック(チェック内容はパラメーターで指定可) | is not a number                                    |
+|              | only_integer                                                | 整数であるか                                       |
+|              | greater_than                                                | 指定値より大きいか                                 |
+|              | greater_than_or_equal_to                                    | 指定値以上か                                       |
+|              | equal_to                                                    | 指定値と等しいか                                   |
+|              | less_than                                                   | 指定値未満か                                       |
+|              | less_than_or_equal_to                                       | 指定値以下か                                       |
+|              | odd                                                         | 奇数か                                             |
+|              | evern                                                       | 偶数か                                             |
+| presence     | 値が空でないか                                              | can't be empty                                     |
+|              | -                                                           | -                                                  |
+| absence      | 値が空であるか                                              | must be blank                                      |
+|              | -                                                           | -                                                  |
+| uniqueness   | 値が一意であるか                                            | has already been taken                             |
+|              | scope                                                       | 一意性制約を決めるために使用する他の列             |
+|              | case_sensitive                                              | 大文字小文字を区別するか(デフォルトは true)        |
+
+### 検証機能の基本
+
+以下の検証ルールを実装する。
+
+| フィルド | 検証ルール                                                                                            |
+| -------- | ----------------------------------------------------------------------------------------------------- |
+| isbn     | 必須検証/一意検証/文字列長検証(17 文字)/正規表現検証([0-9]{3}-[0-9]{1}-[0-9]{3,5)-[0-9]{4}-[0-9X]{1}) |
+| title    | 必須検証/文字列検証(1~100 文字)                                                                       |
+| price    | 数値検証(整数/10000 未満)                                                                             |
+| publish  | 候補値検証(技術評論社/翔泳社/秀和システム/日経 BP 社/ソシムのいずれか)                                |
+
+#### 1.モデルクラスに検証ルールを定義する
+
+```rb
+class Book < ApplicationRecord
+  # バリデーション
+  validates :isbn,      presence: true,
+                        uniquneess: true,
+                        length: { is: 17 },
+                        format: { with: /\A[0-9]{3}-[0-9]{1}-[0-9]{3,5)-[0-9]{4}-[0-9X]{1}\z/}
+  validates :title,     presence: true,
+                        length: { minimum: 1, maximum: 100 }
+  validates :price,     numericality: { only_integer: true, less_than: 1000}
+  validates :publish,   inclusion: { in: ['技術評論社', '翔泳社', '秀和システム', '日経BP社', 'ソシム']}
+end
+```
+
+検証ルールを宣言するのは、validates メソッドの役割。
+
+validates :first_name, :last_name,...
+
+のように複数のフィールドに対してまとめて検証ルールを適用することもできる。
+
+複数のフィールドが同一の検証ルールを持つ場合には、このように記述したほうがコードはシンプルになる。
+
+引数 name と params には検証ルールをハッシュ形式で指定する。
+
+検証パラメータが不要である場合には、検証を有効にする意味で true とだけ指定する。
+
+例えば presence: true のような  場合。
+
+#### 2.検証を実行する
+
+検証はデータの保存時に自動的に行われる。
+
+create アクションであれば、save メソッドが呼び出されるタイミングで入力値の検証が実施される。
+
+save メソッドは検証が成功した場合にのみ保存処理を行い、失敗した場合には保存処理を中断し、戻り値として false を返す。
+
+そのため、アクションメソッド側では save メソッドの戻り値に応じて結果処理を分岐すれば良い。
+
+また save メソッドの他にも検証処理は以下のメソッドを実行するさいに行われる。
+
+- create
+- create!
+- save
+- save!
+- update
+- update!
+
+逆に以下のメソッドでは検証処理がスキップされ、値の正否に関わらず、オブジェクトはそのままデータベースに反映される。
+
+- decrement! (特定のレコードの値を減らす)
+- decrement_counter
+- increment! (特定のレコードの値を増やす)
+- increment_counter
+- toggle! (boolean カラムの値を反転させる)
+- touch (updated_at を現在時刻でアップデートできる)
+- update_all
+- update_attribute
+- update_couters
+- update_column (updated_at の値を更新せず、値を上書きしたい時に使う)
+- save(validate: false)
+
+##### 任意のタイミングで検証する
+
+valid? メソッドを利用することでデータベースへの保存とは別に検証処理だけを独立して実行することができる。
+
+railse 'エラー発生' unless @book.valid?
+
+#### 3.検証エラーを表示する
+
+```ruby
+<% if book.errors.any? %>
+  <div id="error_explanation">
+    <h2><%= pluralize(book.errors.count, "error") %> prohibited this book from being saved:</h2>
+
+    <ul>
+    <% book.errors.full_messages.each do |message| %>
+      <li><%= message %></li>
+    <% end %>
+    </ul>
+  </div>
+<% end %>
+```
+
+検証エラーに関する情報を取得しているのは、モデルオブジェクトの errors メソッド。
+
+errors メソッドは戻り値を ActiveSupport::OrderHash オブジェクトとして返すので、OrderedHash#any?メソッドを呼び出して、エラーの有無をチェックしている。
+
+エラーが存在する場合は配下のブロックでエラーメッセージをリスト表示する。
+
+count メソッドでエラー数を取得し、表示している。
+
+ビューヘルパー pluraize は与えられた数値によって単数系/複数形の単語を返すメソッド。
+
+最後に full_messages メソッドは格納されている全てのエラーメッセージを配列として返す。
+
+#### 4.エラー表示関連のスタイルを確認する
+
+対象要素を表す<label>/<input>要素が<div>要素によって囲まれる。
+
+```html
+<div class="field">
+  <div class="field_with_erros"><label for="book_isbn">Isbn</label></div>
+</div>
+```
+
+<div>要素にはclass属性(値は"field_with_erros")が付与される。
+
+Scaffolding 機能で自動生成されるスタイルシート
+
+```css
+.field_with_errors {
+  padding: 2px;
+  background-color: red;
+  display: table;
+}
+```
+
+デフォルトでは背景色が赤く染まる設定だが、お世辞にもクールとは言えないデザイン。
+
+### その他の検証クラス
+
+#### acceptance 検証\_受託検証
+
+aceptance 検証は、ユーザーが利用規約などに同意しているかを検証するために利用する。
+
+他の検証と異なる点は、acceptance 検証ではデータベースに対応するフィールドを用意する必要がない。
+
+「同意」という行為はあくまでデータ登録時にチェックするだけの用途で、データベースに保村する必要ないため。
+
+![スクリーンショット 2020-10-27 2.50.24.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/6960dd34-57c3-cf67-5843-a7db56b0db1b.png)
+
+acceptance 検証ではテーブルに対応するフィールドを設置する必要がない。
+
+acceptance 検証を宣言したところで、対応する仮装フィールド(:agreement)が内部的に自動生成されるため。
+
+仮装フィールドはあくまで検証のためにのみ利用される。
+
+ちなみに、acceptance 検証ではチェックボックスのチェックの時の値を表す accept パラメータを指定することもできる.
+
+```rb
+<%= f.check_box :agreement, {}, 'yes' %>
+```
+
+のようにチェックボックスが設置されていたとしたら、モデル側では
+
+```rb
+validates: agreement, acceptance: { accept: 'yes'}
+```
+
+のように対応する値を受け取れるようにしておく必要がある。
+
+#### confirmation 検証-同一検証
+
+confirmation 検証はパスワードやアドレスなど重要な項目のために 2 回入力させる場合に、両者がひとしいかどうかを確認する。
+
+acceptance 検証と同じく、確認用のフィールドは仮想的に準備されるので、データベースに対応するフィールドを用意しなくていい。
+
+users_controller.rb
+
+```rb
+params.require(:user).permit(:username, :password, :email, :email_confirmation, :dm, :roles, :agreement)
+      #params.require(:user).permit(:username, :password, :password_confirmation, :email, :email_confirmation, :dm, :roles, :agreement)
+```
+
+user.rb
+
+```rb
+validates :email, confirmation: true
+```
+
+users/\_form.html.erb
+
+```rb
+<div class="field">
+    <%= f.label :email_confirmation %><br />
+    <%= f.text_field :email_confirmation %>
+</div>
+```
+
+![スクリーンショット 2020-11-14 12.58.16.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/491c91be-5ab9-fb16-91e9-ab68e9e22933.png)
+
+#### uniquness 検証 一意性検証
+
+uniquness 検証は、指定されたフィールドの値が一意であるかどうかをチェックする。
+
+発行される SQL
+
+```sql
+SELECT 1 AS one FROM "books" WHERE "books"."isbn" = ? LIMIT ? [["isbn","978-4-7741-8411-1"],["LIMIT",1]]
+```
+
+状況によって複数のフィールドで一意になるようにチェックしたい場合
+
+例えば、books テーブルで署名(title 列)と出版社(publish 列)で一意になるように検証したいという場合
+
+book.rb
+
+```rb
+validates titel:, uniqueness: { scope: :publish}
+```
+
+発行される SQL
+
+```sql
+SELECT 1 AS one FROM "books" WHERE
+"books"."title" = ? AND "books"."publish" = ?
+LIMIT ? [["title", "改定新版JavaScript本格入門"],["publish","技術評論社"],]
+```
+
+### 検証クラス共通のパラメータ
+
+検証クラスには追加で以下のようなパラメータがある。
+
+| パラメータ  | 概要                                   |
+| ----------- | -------------------------------------- |
+| allow_nil   | nil の場合、検証をスキップ             |
+| allow_blank | nil と空白の場合、検証をスキップ       |
+| message     | エラーメッセージ                       |
+| on          | 検証のタイミング。デフォルトは save 時 |
+| if          | 条件式が true の場合にのみ検証を実施   |
+| unless      | 条件式が false の場合にのみ検証を実施  |
+
+#### 空白時に検証をスキップする allow_nil/allow_blank パラメータ
+
+任意入力の項目全ての検証が実行されてしまうのは望ましくない。
+
+また、必須項目でも必須検証が適用されているならば、未入力時に他の検証エラーまで出力されるのは冗長
+
+そこで使われるのが allow_nil/allow_blank パラメータ
+
+これらのパラメータを有効(true)にしておくと、対象の項目が空である場合に検証をスキップさせることができる
+
+検証結果が必須エラーのみに限定される
+![スクリーンショット 2020-11-14 13.38.55.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/41352634-ca6f-2ff0-1f11-ca2481a87a6d.png)
+
+#### 検証タイミングを制限する on パラメーター
+
+検証クラスはデフォルトでデータ保存時に入力値を検証する。
+
+ただ、検証の種類によっては、データの新規登路/更新いずれかのタイミングでのみ処理を行たいというケースもある。
+
+たとえば、規約同意の有無(acceptance)をチェックしたが、これは一般的にはユーザー情報には不要なチェック
+
+しかし、現状では更新時に acceptance 検証が働いてしまう。
+
+そこで on パラメータを利用することで、検証発生タイミングを制限する。
+
+on パラメーターの設定値
+| 設定値 | 概要 |
+| ----------- | -------------------------------------- |
+| create | 新規登録時のみ |
+| update | 更新時のみ |
+| save | 新規登録/更新時の双方(デフォルト) |
+
+user.rb
+
+```rb
+validates :agreement, acceptance: { on: create}
+```
+
+#### エラーメッセージを修正する message パラメータ
+
+検証クラスが生成するデフォルトのエラーメッセージは英語。
+
+検証機能を利用するうえで、最低でもエラーメッセージを日本語にしたい。
+
+エラーメッセージを修正する最も手軽な方法は、message オプションを指定すること
+
+![スクリーンショット 2020-11-15 9.09.02.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/ac1e736f-cc24-c948-b788-6ef097332146.png)
+
+#### 条件付きの検証を定義する if/unnlessパラメーター
