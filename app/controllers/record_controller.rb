@@ -163,4 +163,66 @@ class RecordController < ApplicationController
     @review.published!
     render plain: 'ステータス:' + @review.status
   end
+
+  # 検索フォームを表示する
+  def keywd
+    @search = SearchKeyword.new
+  end
+
+  # 検索ボタンがクリックされた場合に呼び出される
+  def keywd_process
+    @search = SearchKeyword.new(params.require(:search_keyword).permit(:keyword))
+
+    if @search.valid?
+      render plain: @search.keyword
+    else
+      render plain: @search.errors.full_messages[0]
+    end
+  end
+
+  def has_and_belongs
+    @book = Book.find_by(isbn: '978-4-7980-4803-1')
+  end
+
+  def cache_counter
+    @user =User.find(1)
+    render plain: @user.reviews.size
+  end
+
+  def memorize
+    @book = Book.find(1)
+    @memo = @book.memos.build({ body: 'あとで買う' })
+    if @memo.save
+      render plain: 'メモを作成しました。'
+    else
+      render plain: @memo.errors.full_messages[0]
+    end
+  end
+
+  def assoc_join
+    @books = Book.joins(:reviews, :authors).
+     order('books.title, reviews.updated_at').
+     select('books.*, reviews.body, authors.name')
+  end
+
+  def assoc_join2
+  @books = Book.joins(reviews: :user).
+     select('books.*, reviews.body, users.username')
+  end
+
+  def assoc_join3
+    @books = Book.joins('LEFT OUTER JOIN reviews ON reviews.book_id = books.id').
+      select('books.*, reviews.body')
+  end
+
+    # left_outer_joinsメソッドの場合
+  def assoc_join4
+    @books = Book.left_outer_joins(:reviews).select('books.*, reviews.body')
+    render 'assoc_join3'
+  end
+
+  def assoc_includes
+    # @books = Book.includes(:reviews).all
+    @books = Book.all
+  end
 end

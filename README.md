@@ -2860,4 +2860,890 @@ validates :agreement, acceptance: { on: create}
 
 ![スクリーンショット 2020-11-15 9.09.02.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/ac1e736f-cc24-c948-b788-6ef097332146.png)
 
-#### 条件付きの検証を定義する if/unnlessパラメーター
+#### 条件付きの検証を定義する if/unnless パラメーター
+
+特定の条件配下でのみジックすべき検証を定義するには、if/unless パラメータを使用する。
+
+例えば、ユーザー登録画面で「メール通知を有効化」dm 欄にチェックした場合のみ、メールアドレスを必須にする。
+
+user.rb
+
+```rb
+validates :email, presence: { if: '!dm.blank?' }
+```
+
+「dm フィールドが空(blank?)でなければ、presence 検証を有効にしなさい」という意味になる。
+
+if/unless オプションには文字列で条件式を指定する他、シンボル、proc オブジェクトで指定する方法もある。
+
+シンボルを使用
+
+```rb
+validates :email, presence: { unless: :sendmail? }
+  def senmail?
+    dm.blank?
+  end
+end
+```
+
+シンボルではシンボルに対応するメソッドを定義する必要がある。
+
+prock を使用
+
+```rb
+validates :email, presence: { unless: Proc.new {|u| u.dm.blank? } }
+```
+
+プロックでは引数として現在のモデルオブジェクトが引数 u で渡されるので、これをもとに処理する。
+
+一般的にはシンボル指定を利用し、シンプルな条件指定では文字列または Proc オブジェクトをという使い分けをする。
+
+##### 複数項目にまとめて条件を指定する
+
+特定の条件を満たした場合、まとめて複数の検証を有効にしたいというケースもある。
+
+そのようなときに with_options メソッドを利用することで、条件式をまとめて記述できる
+
+たとえば「メール通知を有効化」(dm)欄をチェックした場合にのみメールアドレス/ロール欄を必須にする例。
+
+user.rb
+
+```rb
+with_options unless: 'dm.blank?' do |dm|
+  dm.validates :email, presence: true
+  dm.validates :roles, presence: true
+end
+```
+
+### 自作検証クラスの定義
+
+Active Model では標準でも様々な検証クラスを提供しているが、本格的にアプリを構築する上では、標準の検証機能だけでまかなえない部分もある。
+
+そのような場合に検証クラスを自作する。
+
+#### パラメーターを持たない検証クラス
+
+ISBN コードの妥当性を検証するための IsbnValidator クラスを定義してみいる。
+
+検証クラスは/app/models フォルダーに配置する
+
+isbn_validator.rb
+
+```rb
+class IsbnValidator < ActiveModel::EachValidator
+  #パラメーターを受け取らない検証クラス
+  def validate_each(record, attribute, value)
+    record.errors.add(attribute, 'は正しい形式ではありません。') unless value =~ /\A([0-9]{3}-)?[0-9]{1}-[0-9]{3,5}-[0-9]{4}-[0-9X]{1}\z/
+  end
+end
+```
+
+検証クラスは ActiveModel::EachValidator の派生クラスとして(1)、「検証 Validator」のん形式で命名する必要がある。
+
+ActiveModel::EachValidator は検証クラスの基本機能を提供するクラス
+
+検証クラスの実処理を定義するには、validate_each メソッドを使う。
+
+validate_each メソッドは引数として、
+
+- 検証対象のモデルオブジェクト(record)
+- 検証対象のフィールド名(attribute)
+- 検証対象の値(value)
+
+を受け取る。
+
+メソッド配下では、これらの値を利用して、実際の検証処理を行う。
+
+検証時に発生したエラー情報は errors.add メソッドを介してモデルオブジェクト record に登録する必要がある。
+
+この例では入力値 value をあらかじめ与えられた正規表現パターン(ISBN コードの形式)と比較し、合致しない場合にエラーメッセージを登録する。
+
+検証クラスの準備ができると、これを利用するのは簡単。
+
+Book クラスの isbn フィールドに適用した format 検証を IsbnValidator クラスによる検証で置き換えする。
+
+IsbnValidator であれば isbn、EmailAddressValidator であれば email_address が検証名となる。
+
+isbn 検証は特にパラメーターを受け取らないので、最低限 ture を引き渡せば呼び出せる。
+
+```rb
+    3: def validate_each(record, attribute, value)
+    4:   binding.pry
+ => 5:   record.errors.add(attribute, 'は正しい形式ではありません。') unless value =~ /\A([0-9]{3}-)?[0-9]{1}-[0-9]{3,5}-[0-9]{4}-[0-9X]{1}\z/
+    6: end
+
+[1] pry(#<IsbnValidator>)> record
+=> #<Book:0x00007f4650ac1988
+ id: nil,
+ isbn: "ewuriwouriwquiu",
+ title: "",
+ price: nil,
+ publish: "",
+ published: Fri, 20 Nov 2020,
+ dl: false,
+ created_at: nil,
+ updated_at: nil>
+[2] pry(#<IsbnValidator>)> attribute
+=> :isbn
+[3] pry(#<IsbnValidator>)> value
+=> "ewuriwouriwquiu"
+```
+
+#### パラメータを受け取る検証クラス
+
+パラメータ情報を受け取る検証クラスを定義する。
+
+先ほどの isbn 検証を改良し、allow_old パラメータを受け取れるようにする。
+
+allow_old パラメータに true が渡された場合に、isbn 検証は古い形式の ISBN コードも許可する。
+
+isbn_validator.rb
+
+```rb
+# パラメーターを受け取る検証クラス
+  def validate_each(record, attribute, value)
+    if options[:allow_old]
+      pattern = '\A([0-9]{3}-)?[0-9]{1}-[0-9]{3,5}-[0-9]{4}-[0-9X]{1}\z'
+    else
+      pattern = '\A[0-9]{3}-[0-9]{1}-[0-9]{3,5}-[0-9]{4}-[0-9X]{1}\z'
+    end
+    record.errors.add(attribute, 'は正しい形式ではありません。') unless value =~ /#{pattern}/
+  end
+```
+
+book.rb
+
+```rb
+isbn: { allow_old: true}
+```
+
+パラメータ情報には「options[パラメータ名]でアクセスできる。
+
+allow_ald パラメータが true/false いずれであるかによって、旧形式/新形式の正規表現パターンをセットし、入力値 value と比較している。
+
+#### 複数項目をチェックする検証
+
+複数の項目にまたがる検証も表現できる
+
+他のフィールド値との比較検証を実装する例。
+
+compare 検証のパラメータ情報
+| 設定値 | 概要 |
+| ----------- | -------------------------------------- |
+| compare_to | 比較フィールドの名前 |
+| type | 比較の方法(:less_than、:greater_than、:equal) |
+
+compare_validator.rb
+
+```rb
+class CompareValidator < ActiveModel::EachValidator
+  def validate_each(record, attribute, value)
+    cmp = record.attributes[options[:compare_to]].to_i
+    case options[:type]
+      when :greater_than
+        record.errors.add(attribute, 'は指定項目より大きくなければなりません。')unless value > cmp
+      when :less_than
+        record.errors.add(attribute, 'は指定項目より小さくなければなりません。')unless value < cmp
+      when :equal
+        record.errors.add(attribute, 'は指定項目と等しくなければなりません。')unless value == cmp
+      else
+        raise 'unknown type'
+    end
+  end
+end
+```
+
+指定されたフィールドの値を現在のモデルから取得するのは、attribute メソッドの役割。
+
+これまでは、record.title のようにプロパティ構文を利用してきたが、この例では利用できない。
+
+理由はフィールド名が、:compare_to パラメータ経由で文字列として渡されるから。
+
+このような場合には attributes メソッドを利用することで、取得するフィールド名を文字列で指定できるようになる。
+
+ここでは:compare_to パラメータ経由で渡されたフィールドの値を取得し、to_i メソッドで整数値に変換している。
+
+値を取得できてしまえば、case ブロックで:type パラメータに応じて値を比較するだけ。
+
+例えば compare 検証を利用するには、min_value フィールドが max_value フィールドより小さいことを検証するなど
+
+```rb
+validates :min_value,
+  compare: { compare_to: 'max_value', type: :less_than}
+```
+
+#### 検証クラスを定義せずにカスタム検証を定義
+
+カスタムの検証ルールは、まず ActiveModel::EachValidator クラスを検証して実装するのが基本。
+
+他のモデルで使いまわさないようなモデル固有の検証ルールなどは、あえてクラスとして定義するまでもないということもある。
+
+そのような場合にはモデルの中でプライベートメソッドとして検証ルールを定義することもできる。
+
+book.rb
+
+```rb
+errors.add(attribute, 'は正しい形式ではありません。') unless value =~ /\A([0-9]{3}-)?[0-9]{1}-[0-9]{3,5}-[0-9]{4}-[0-9X]{1}\z/
+```
+
+### データベースんい関連づかないモデルを定義する ActiveModel::Model モジュール
+
+ActiveModel とはモデルの基本的な構造や規約を決定するコンポーネント。
+
+ActiveModel の機能を直接利用することで、データベースと対応関係にないモデルを実装することもできる。
+
+たとえば「データベースの項目ではないが、フォームからの入力を受け取って検証を行う」必要があるような処理を、(アクションメソッドを検証処理で汚すことなく)モデルクラスとしてまとめるような用途で利用する。
+
+例としては検索フォームを想定したサンプルで、ページから入力された検索キーワードを SerchKeyword モデルとしてまとめ、必須検証を実装している。
+
+```rb
+class SearchKeyword
+include ActiveModel::Model
+attr_accessor :keyword
+validates :keyword, presence: true
+end
+```
+
+非データベース系のモデルを定義する際のルールは以下
+
+1. ActiveModel::Model モジュールをインクルードすること
+1. モデルとして管理すべき項目をアクセサー(attr_accessor メソッド)で定義
+
+この例では検索キーワードを表す keyword プロパティを定義している.
+
+もちろん必要に応じて複数の項目を列記しても構わない。
+
+以上のように書くことで、validates メソッドが使える。
+
+#### 非データベース系のモデルを利用する
+
+作成した SearchKeyword モデルは、これまでと同じ方法で利用できる。
+
+本来であれば、検索キーワードを受け取った後、データベースへの検索などの処理が発生するはず。
+
+検証キーワード、もしくは、入力に不備がある場合はエラーを表示する。
+
+record_controller.rb
+
+```rb
+# 検索フォームを表示する
+  def keywd
+    @search = SearchKeyword.new
+  end
+
+  # 検索ボタンがクリックされた場合に呼び出される
+  def keywd_process
+    @search = SearchKeyword.new(params.require(:search_keyword).permit(:keyword))
+
+    if @search.valid?
+      render plain: @search.keyword
+    else
+      render plain: @search.errors.full_messages[0]
+    end
+  end
+```
+
+keywrd.html.erb
+
+```rb
+<%= form_for @search, url: { action: :keywd_process } do |f| %>
+  <%= f.text_field :keyword, size: 25 %>
+  <%= f.submit '検索' %>
+<% end %>
+```
+
+![スクリーンショット 2020-11-21 12.08.10.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/4be41f27-c94f-8c64-3343-17990a8bc74d.png)
+
+## アソシエーションによる複数テーブル処理
+
+アソシエーション(関連) とは、テーブル間のリレーションシップをモデル上の関係として操作できるようにするしくみ。
+
+アソシエーションを利用することで、複数テーブルにまたがるデータ操作をより直感的に利用できるようになる。
+
+### リレーションシップと命名規則
+
+![スクリーンショット 2020-11-21 12.19.02.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/1c0fe3d5-c5d6-5d90-fcb0-f989469d2296.png)
+
+以下の命名規則に注意。
+
+- 外部キー列は「参照先モデル名\_id」の形式(例: book_id, user_id)
+- 中間テーブルは参照先のテーブル名で「\_」で連結したものであること。ただし連結順序は辞書順(authors_books)
+
+中間テーブルとは m:n の関係を表現する際に、互いの関連付けを管理するための便宜的なテーブル。
+
+結合テーブルと呼ぶ場合もある。
+
+### 参照元テーブルから参照先テーブルの情報にアクセスする belong_to アソシエーション
+
+![スクリーンショット 2020-11-23 10.47.21.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/47b971e4-39c7-88f2-032d-cbe11ae9b505.png)
+
+```rb
+class Review < ApplicationRecord
+  belongs_to :book
+end
+```
+
+上記のようにすることで、
+
+```rb
+Review.find(1).book.title
+```
+
+のように、id のレビューに紐づく親の book タイトルを参照することができる
+
+```sql
+Review Load (0.3ms)  SELECT  `reviews`.* FROM `reviews` WHERE `reviews`.`id` = 1 ORDER BY `reviews`.`updated_at` DESC LIMIT 1
+Book Load (0.4ms)  SELECT  `books`.* FROM `books` WHERE `books`.`id` = 1 LIMIT 1
+```
+
+### 1:n の関係を表現する has_many アソシエーション
+
+![スクリーンショット 2020-11-23 10.56.31.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/5909b131-6280-ffc4-63bb-552b88a04379.png)
+
+```rb
+class Book < ApplicationRecord
+  has_many :review
+end
+```
+
+上記のようにすることで
+
+```rb
+Book.find(1).reviews
+```
+
+id が 1 の book に紐づいている全ての review を呼び出せる。
+
+```sql
+ Book Load (0.3ms)  SELECT  `books`.* FROM `books` WHERE `books`.`id` = 1 LIMIT 1
+ Review Load (1.4ms)  SELECT `reviews`.* FROM `reviews` WHERE `reviews`.`book_id` = 1 ORDER BY `reviews`.`updated_at` DESC
+```
+
+### 1:1 の関係を表現する has_one アソシエーション
+
+1:1 の関係とは、今回では users テーブルと authors テーブルのような関係をいう。
+
+users/authors テーブルでは、あるユーザーが著者としても登録されているようなモデルを想定している。
+
+1 人のユーザが複数の著者になることはない。
+
+![スクリーンショット 2020-11-23 11.06.46.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/0e57464c-4390-7e05-12cd-a0981bd66664.png)
+
+```rb
+class User < ApplicationRecord
+  has_one :author
+end
+```
+
+```rb
+class Author < ApplicationRecord
+  belongs_to :user
+end
+```
+
+has_one メソッドは 1 つの User オブジェクトにたいして最大 1 つの Autho オブジェクトが存在する。という意味となる。
+
+これによって
+
+```rb
+User.find(1).author
+```
+
+id が 1 の user に紐づく著者を呼び出すことができる
+
+```SQL
+User Load (0.8ms)  SELECT  `users`.* FROM `users` WHERE `users`.`id` = 1 LIMIT 1
+Author Load (0.6ms)  SELECT  `authors`.* FROM `authors` WHERE `authors`.`user_id` = 1 LIMIT 1
+=> #<Author:0x0000561e50372598
+ id: 1,
+ user_id: 1,
+ name: "山田祥寛",
+ birth: Thu, 04 Dec 1975,
+ address: "千葉県鎌ケ谷市宝町1-1-1",
+ ctype: nil,
+ photo: nil,
+ created_at: Sun, 11 Oct 2020 13:46:12 UTC +00:00,
+ updated_at: Sun, 11 Oct 2020 13:46:12 UTC +00:00>
+```
+
+### m:n の関係を表現する has_and_belogs_to_many アソシエーション
+
+m:n(多:多)の関係とは、今回では books/authors のような関係。
+
+書籍情報には複数の著者が含まれる可能性があり、著者もまた複数の書籍を執筆している可能性がある。
+
+リレーショナルデータベースではこのような関係を直接表現することができないので、author_books という形式的な中間テーブルを使って表現する 。
+
+![スクリーンショット 2020-11-23 11.25.42.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/4a8e6b90-d195-122c-ed0d-ec2e539b0986.png)
+
+```rb
+class Book < ApplicationRecord
+  has_and_belongs_to_many :authors
+end
+
+```
+
+```rb
+class Author < ApplicationRecord
+  has_and_belongs_to_many :books
+end
+```
+
+m:n の関係ではどちらが主従とうことはないので、双方に対して has_and_belongs_to_many メソッドによる宣言をする。
+
+- record_controller.rb
+
+```rb
+def has_and_belongs
+  @book = Book.find(1)
+end
+```
+
+```rb
+<h2>「<%= @book.title %>」の著者情報</h2>
+<hr />
+<ul>
+<% @book.authors.each do |author| %>
+  <li><%= author.name %>（<%= author.birth %>｜<%= author.address %>）</li>
+<% end %>
+</ul>
+```
+
+![スクリーンショット 2020-11-23 11.37.17.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/a6277a0f-d5f3-9268-4203-85b011e0bfc9.png)
+)
+
+### m:n の関係を表現する(2) has_many through アソシエーション
+
+has_and_belogs_to_many アソシエーションは m:n の関係を表現するには手軽は方法だが、デメリットがある。
+
+それは中間テーブルを便宜的なものとして操作するため、中間テーブルに関連付け以上の情報を加えることができない。
+
+つまり、中間テーブルを介した情報をえることができない。
+
+以下のような関連付けをしたいばあいは、has_many through アソシエーションを使用する。
+
+![スクリーンショット 2020-11-23 11.46.48.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/b5263130-2544-593b-b4f2-7ceaef806778.png)
+
+```rb
+class Book < ApplicationRecord
+  has_many :reviews
+  has_many :users, through: :reviews
+end
+```
+
+```rb
+class Review < ApplicationRecord
+  belongs_to :book
+  belongs_to :user
+end
+```
+
+```rb
+class User < ApplicationRecord
+  has_many :reviews
+  has_many :books, through: :reviwes
+end
+```
+
+こうすることで以下のようなアクセスをすることができる
+
+```rb
+User.find(2).books
+```
+
+```sql
+User.find(2).books
+  User Load (0.3ms)  SELECT  `users`.* FROM `users` WHERE `users`.`id` = 2 LIMIT 1
+  Book Load (0.4ms)  SELECT `books`.* FROM `books` INNER JOIN `reviews` ON `books`.`id` = `reviews`.`book_id` WHERE `reviews`.`user_id` = 2 ORDER BY `reviews`.`updated_at` DESC
+```
+
+### アソシエーションによって追加されるメソッド
+
+belogs_to/has_one で追加されるメソッド
+
+| メソッド                           | 概要                                 | 例                                                        |
+| ---------------------------------- | ------------------------------------ | --------------------------------------------------------- |
+| assosication(force_reload = false) | 関連するモデルを取得。               | @book = @review.book                                      |
+| assosication(associate)            | 関連先モデルを割当                   | @review.book = @book                                      |
+| build_assosication(attrs = {})     | 関連先モデルを新規作成(保存はしない) | @author = @user.build_author(name: 'hoge',birth: 'huga')  |
+| create_assosication(attrs = {})    | 関連先モデルを新規作成(保存する)     | @author = @user.create_author(name: 'hoge',birth: 'huga') |
+
+- has_many/has_and_belongs_to_many で追加されるメソッド
+
+| メソッド                          | 概要                                               | 例                                   |
+| --------------------------------- | -------------------------------------------------- | ------------------------------------ |
+| colliection(force_reload = false) | 関連するモデルを取得。                             | @reviews = @book.reviews             |
+| colliection << (obj)              | 関連するモデルを追加                               | @book.reviews << @review             |
+| colliection.destroy(obj)          | 関連するモデルを削除                               | @book.reviews.destory(@review)       |
+| colliection.delete(obj)           | 関連するモデルを削除                               | @book.reviews.delete(@review)        |
+| colliection = objs                | 現在のモデルに関するモデルを指定モデル郡で入れ替え | @book.reviews = @new_reviews         |
+| colliection_singular_ids          | 関連モデルの id 値を配列として取得                 | @review_ids = @book.review_ids       |
+| colliection_singular_ids          | 関連モデルの id 値を配列として取得                 | @review_ids = @book.review_ids       |
+| colliection_singular_ids = ids    | 関連モデルの id 値を総入れ替え                     | @book.review_ids = @review_ids       |
+| colliection.clear                 | 関連モデルを破棄                                   | @book.reviews.clear                  |
+| colliection.empty?                | 関連モデルが存在するかチェック                     | @book.reviews.empty?                 |
+| colliection.empty?                | 関連モデルが存在するかチェック                     | @book.reviews.empty?                 |
+| colliection.size?                 | 関連モデルの数の取得                               | @book.reviews.size                   |
+| colliection.find(..)              | 関連モデル郡から特定のモデルを抽出                 | @book.reviews.find(1)                |
+| colliection.exist?(..)            | 関連モデル郡から特定のモデルが存在するかチェック   | @book.reviews.exists?(1)             |
+| colliection.build(attrs = {})     | 関連先のモデルを新規作成(保存しない)               | @book.reviews.build(body: '良い本')  |
+| colliection.create(attrs = {})    | 関連先のモデルを新規作成(保存する)                 | @book.reviews.create(body: '良い本') |
+
+### アソシエーションで利用できるオプション
+
+基本的なテーブルでデフォルトの命名規則に沿っている場合には、特別なオプションの指定をほとんど必要ない。
+
+しかし、独自の命名を行なっている場合や、あるいはカウンターキャッシュやポリモーフィック関連のような追加機能を利用したいケースもある。
+
+そのような場合に使用できる Rails のオプションを指定することで、様々なカスタマイズか可能になる。
+
+- アソシエーションで利用できる主なオプション(bl: belongs_to, ho: has_one, hm: has_many hbtm: has_and_belongs_to_many)
+
+| オプション              | bl  | ho  | hm  | hbtm | 概要                                                                      |
+| ----------------------- | --- | --- | --- | ---- | ------------------------------------------------------------------------- |
+| as                      | x   | o   | o   | x    | ポリモーフィック関連を有効化(親モデルの関連名)                            |
+| association_foreign_key | x   | x   | x   | o    | m:n 関係で関連先への外部キー(たとえば Book モデルから見た author_id など) |
+| autosave                | o   | o   | o   | o    | 親モデルに併せて保存/削除を行う                                           |
+| class_name              | o   | o   | o   | o    | 関連モデルのクラス名                                                      |
+| counter_cache           | o   | x   | o   | x    | モデル数を取得する際にキャッシュを利用するか                              |
+| dependent               | o   | o   | o   | x    | モデル削除時に関連先のモデルも削除するか(:destroy,:delete,;nullify)       |
+| foreign_key             | o   | o   | o   | o    | 関連で使用する外部キー列の名前                                            |
+| join_table              | x   | x   | x   | o    | 中間テーブルの名前                                                        |
+| optional                | o   | x   | x   | x    | 関連先のオブジェクトが存在するかを検証しない                              |
+| primary_key             | o   | x   | o   | x    | 関連で使用する主キー列の名前                                              |
+| polymorphic             | o   | x   | x   | x    | ポリモーフィック関連を有効化                                              |
+| readonly                | x   | x   | x   | o    | 関連先のオプジェクトを読取専用にするか                                    |
+| required                | o   | x   | x   | x    | 関連先のオブジェクトが存在するかを検証                                    |
+| touch                   | o   | x   | x   | x    | モデル保存時に関連先オプジェクトの created_at/updated_at も更新           |
+| through                 | x   | o   | o   | x    | 関連先のオブジェクトを参照する                                            |
+| validate                | o   | o   | o   | o    | 現在のモデルを保存する際に、関連先の検証も実行するか                      |
+
+#### 関連の命名を変更する
+
+Aouthor モデルに対して、1:n の関係にある FanComment モデル(ファンコメント)を追加する例
+
+![スクリーンショット 2020-11-23 17.14.50.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/360bf52a-ada4-3d6f-7dfa-0af3cd1f6dcd.png)
+
+- Aouthor モデルからは FanComment モデル(fan_comments メソッドではなく)comments メソッドで参照
+
+- faon_comments テーブルの外部キーは aouthor_no フィールド
+
+- Author モデルから FanComment モデルを取得する際に、deleted 列が false(未削除)であるもののみを抽出したい
+
+以上の要件を満たすためには、Author モデルで has_many 関連を定義する際に、以下のようなオプションを設定する必要がある。
+
+- author.rb
+
+```rb
+class Author < ApplicationRecord
+  has_many :comments, -> { where(deleted: false) }, class_name: 'FanComment',
+    foreign_key: 'author_no'
+end
+```
+
+まず:comments と定義しているが、用途によって自由に付けて良い。
+
+ちなみに commets メソッドで関連先のテーブルを参照することができるようになる。
+
+ただし、デフォルトでは関連名がそのまま関連先のクラス名とみなされるため、自由に命名した場合には、class_name オプションで関連先のクラス名を宣言する必要がある。
+
+foreign_key:は外部キーを指定している。
+
+通常は「author_id」のように「モデル名 + \_id」の形式となるはずだが、異なる命名をしている場合には、foreign_key オプションで明示的に宣言する必要がある。
+
+また-> { where(deleted: false) }で FanComment モデルを参照する際の条件式を指定している。
+
+条件式はメソッドの第二引数にラムダ式 -> { where(deleted: false) } の形式で表す。
+
+この例では、削除済みのコメントは参照したくないので、deleted 列が false のもののみ限定して取得している。
+
+ラムダ式の中では、where メソッドだけでなく order/limit などのクエリメソッドを指定できる。
+
+#### 関連モデルの件数を親モデル側でキャッシュする counter_chache オプション
+
+例えばあるユーザー(users テーブル)が投稿したレビュー(reviews テーブル)の件数を users テーブルで保存しておければ、件数を取得する為だけに両者を結合する必要がなくなり便利。
+
+アソシエーションでは、belongs_to メソッドの counte_cache オプションを利用することで、このような仕組みを簡単に実装できる。
+
+![スクリーンショット 2020-11-23 17.35.23.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/a842cd1a-2fb4-b4c8-873f-1db1a99dd528.png)
+
+1. カウンター管理のための列を作成する
+   まず、親テーブルに「小テーブル名\_count」という名前で integer 型の列(カウンター列)を準備する。
+   Active Record では、このカウンター列に対して関連モデルの件数を記録することで。カウンターキャッシュを実現している。
+   この例であれば、users テーブルの reviews_count 列が、関連するレビュー数を管理する。
+   rails generete コマンドで自動生成したマイグレーションファイルは、そのまま利用できるが、最低限 default: 0 を追記する必要がある。
+   これでカウンター列のデフォルトを 0 に設定できる
+
+1. カウンターキャッシュ機能を有効にする
+   あとは子モデル(Review モデル)でカウンターキャッシュを有効にする
+
+   ```rb
+   class Review < ApplicationRecord
+      belongs_to :book
+      # カウンターキャッシュを有効化
+      belongs_to :user, counter_cache: true
+   end
+   ```
+
+   ただし、カンター列が「review_count」のように「小テーブル\_count」でない場合は「counter_cache: :review_num」のように、明示的に列名を指定しなければならない。
+
+1. カウンターキャッシュを利用して件数を取得する
+
+   - record_controller.rb
+
+   ```rb
+   def cache_counter
+    @user =User.find(1)
+    render plain: @user.reviews.size
+   end
+   ```
+
+   ```sql
+   User Load (0.5ms)  SELECT  `users`.* FROM `users` WHERE `users`.`id` = 1 LIMIT 1
+   ```
+
+   「@user.reviews.size」で Review モデルへのアクセスが発生しているにもかかわらず、reviews テーブルへの問い合わせは発生していない点が注目。
+
+   size メソッドと似たようなメソッドで、length/count などがあるが、これらのメソッドではカウンターキャッシュは働かないので注意。
+
+##### カウンターキャッシュの仕組み
+
+カウンターキャッシュを有効にした状態で、子モデルを追加/削除すると親モデルのカウンター列が自動的にインクリメント/デクリメントされる。
+
+以下では、新規にレビューを登録した場合に発生する SQL
+
+```sql
+INSERT INTO `reviews` (`book_id`, `user_id`, `body`, `created_at`, `updated_at`) VALUES (1, 1, '良い', '2020-11-23 09:14:11', '2020-11-23 09:14:11')
+User Update All (2.6ms)  UPDATE `users` SET `reviews_count` = COALESCE(`reviews_count`, 0) + 1 WHERE `users`.`id` = 1
+```
+
+モデルを介さずにデーターベスを更新した場合、もしくはコールバックを利用しないメソッド(たとえば delete メソッドのように)でモデルを操作した場合にはカウンターは正しく管理できない。
+
+同じ理由からテーブルのデータを初期化する場合にはその時点での子モデルの件数を反映しなければならない。
+
+自動的に、その時点での件数が反映されるわけではないので、要注意。
+
+#### 1 つのモデルを複数の親モデルに関連付ける ポリモーフィック関連
+
+ポリモーフィック関連とは 1 つのモデルが複数の親モデルに紐づく関連のこと。
+
+具体的には以下のような関連。
+
+![スクリーンショット 2020-11-23 18.19.26.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/c4092459-1c79-eaf2-3e9f-71e8b91dcbb5.png)
+
+この例では Book(書籍)/Author(著者)モデルは、それぞれのメモ情報を Memo(メモ)モデルで管理している。
+
+このようなポリモーフィック関連では、通常の外部キーだけでは紐付けを表現できないので、
+
+- xxxx_type(紐づけるモデル)
+
+- xxxx_id(外部キー)
+
+のような列をテーブルに準備しておく必要がある。
+
+xxxx はあとから指定する関連名を表す。
+
+そして、モデル側では以下のような宣言が必要
+
+- 親モデル側で as オプション付きの has_many メソッドを宣言
+
+- 子モデル側で polymorphic オプション付きの bolengs_to メソッドを宣言
+
+- book.rb
+
+```rb
+class Book < ApplicationRecord
+  has_many :memos, as: :memoable
+end
+```
+
+- author.rb
+
+```rb
+class Author < ApplicationRecord
+  has_many :memos, as: :memoable
+end
+```
+
+- memo.rb
+
+```rb
+class Memo < ApplicationRecord
+  belongs_to :memoable, polymorphic: true
+end
+```
+
+as オプションには関連名を指定する。
+
+この例では親モデル(Book/Aouthor)が子モデル(Memo)から memorable という名前で参照できるようにポリモーフィック宣言している。
+
+- as オプションの値
+
+- belongs_to メソッドの引数
+
+- 子テーブル側の xxx_type/xxx_id 列の xxx の部分
+
+は全て同じでなくてはならない。
+
+- record_controller.rb
+
+```rb
+def memorize
+  @book = Book.find(1)
+  @memo = @book.memos.build({ body: 'あとで買う' })
+  if @memo.save
+    render plain: 'メモを作成しました。'
+  else
+    render plain: @memo.errors.full_messages[0]
+  end
+end
+```
+
+build メソッドで書籍情報に関連付いたメモ情報を生成している。
+
+上のアクションを実行いした後、rails dbconsole コマンドなどで memos テーブルの内容を確認する。
+
+以下のように memoable_type 列に関連先モデルである Book が、memoable_id 列に books テーブルの id 値がセットされていればポリモーフィック関連が正しく動作している。
+
+```sql
+Select * FROM memos;
++----+---------------+-------------+-----------------+---------------------+---------------------+
+| id | memoable_type | memoable_id | body            | created_at          | updated_at          |
++----+---------------+-------------+-----------------+---------------------+---------------------+
+|  1 | Book          |           1 | あとで買う      | 2020-11-23 15:16:56 | 2020-11-23 15:16:56 |
++----+---------------+-------------+-----------------+---------------------+---------------------+
+1 row in set (0.001 sec)
+```
+
+### 関連するモデルと結合する joins メソッド
+
+複数のテーブルと結合する場合、Rails ではアソシエーションを利用するのが基本だが、joins メソッドを利用する方法でもほぼ同様のことができる。
+
+joins メソッドは、関連するモデルを結合し、まとめて取得するメソッド。
+
+引数は以下をしようする。
+
+#### 関連名(シンボル)
+
+指定した関連名で INNEW JOIN 句を生成する。
+
+カンマ区切りで複数のシンボルを同時に指定しても構わない。
+
+- record_controller.rb
+
+```rb
+def assoc_join
+  @books = Book.joins(:reviews, :authors).
+    order('books.title, reviews.updated_at').
+    select('books.*, reviews.body, authors.name')
+end
+```
+
+```sql
+ SELECT books.*, reviews.body, authors.name FROM `books` INNER JOIN `reviews` ON `reviews`.`book_id` = `books`.`id` INNER JOIN `authors_books` ON `authors_books`.`book_id` = `books`.`id` INNER JOIN `authors` ON `authors`.`id` = `authors_books`.`author_id` ORDER BY books.title, reviews.updated_at
+```
+
+#### 関連名 1: 関連名 2
+
+複数モデルにまたがる結合を表す。
+
+- record_controller.rb
+
+```rb
+def assoc_join2
+@books = Book.joins(reviews: :user).
+    select('books.*, reviews.body, users.username')
+end
+```
+
+```sql
+SELECT books.*, reviews.body, users.username FROM `books` INNER JOIN `reviews` ON `reviews`.`book_id` = `books`.`id` INNER JOIN `users` ON `users`.`id` = `reviews`.`user_id`
+```
+
+#### 文字列
+
+LEFT JOIN/RIGHT JOIN など、INNER JOIN 以外の結合条件を表すのに利用している
+
+- record_controller.rb
+
+```rb
+def assoc_join3
+  @books = Book.joins('LEFT OUTER JOIN reviews ON reviews.book_id = books.id').
+    select('books.*, reviews.body')
+end
+```
+
+```sql
+ SELECT books.*, reviews.body FROM `books` LEFT OUTER JOIN reviews ON reviews.book_id = books.id
+```
+
+いずれの場合も、JOIN 句によって複数のテーブルの内容を単一の問い合わせで取得している点に注目
+
+また、joins メソッドを利用した場合、関連モデルの列には現在のモデルからアクセスする。
+
+body 列は reviews テーブルに、name 列には authors テーブルに属する列である点に注目
+
+- record/assoc_join.html.erb
+
+```rb
+<% @books.each do |b| %>
+  <p><%= b.body %>（<%= b.title %>：<%= b.name %>）</p>
+<% end %>
+```
+
+### 関連するモデルと結合する left_outer_joins メソッド
+
+- record_controller.rb
+
+```rb
+ def assoc_join4
+    @books = Book.left_outer_joins(:reviews).select('books.*, reviews.body')
+    render 'assoc_join3'
+  end
+```
+
+```sql
+ SELECT books.*, reviews.body FROM `books` LEFT OUTER JOIN `reviews` ON `reviews`.`book_id` = `books`.`id`
+```
+
+### 関連するモデルをまとめて取得する includes メソッド
+
+アソシエーションで関連モデルを読み込むのは、それが必要になったタイミングである。
+
+つまり複数モデルを each メソッドなどで処理し、それぞれの関連モデルを取得するさいには、元モデルの数だけデータアクセスが発生するということ。
+
+これは効率という意味でも望ましくない為、このような状況では includes メソッドを利用する。
+
+includes メソッドでは指定された関連モデルを元モデルの読み込み時にまとめて取得することで、データアクセス回数を減らす。
+
+- record_controller.rb
+
+```rb
+def assoc_includes
+  @books = Book.includes(:reviews).all
+  # @books = Book.all
+end
+```
+
+```sql
+SELECT `books`.* FROM `books`
+SELECT `reviews`.* FROM `reviews` WHERE `reviews`.`book_id` IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10) ORDER BY `reviews`.`updated_at` DESC
+```
+
+includes メソッドの引数には関連モデルを指定する
+
+includes メソッドを外した場合、以下のように reviews テーブルへのアクセスが何度も発生する。
+
+```sql
+ Book Load (0.5ms)  SELECT `books`.* FROM `books`
+SELECT `reviews`.* FROM `reviews` WHERE `reviews`.`book_id` = 1 ORDER BY `reviews`.`updated_at` DESC
+SELECT `reviews`.* FROM `reviews` WHERE `reviews`.`book_id` = 2 ORDER BY `reviews`.`updated_at` DESC
+SELECT `reviews`.* FROM `reviews` WHERE `reviews`.`book_id` = 3 ORDER BY `reviews`.`updated_at` DESC
+SELECT `reviews`.* FROM `reviews` WHERE `reviews`.`book_id` = 4 ORDER BY `reviews`.`updated_at` DESC
+SELECT `reviews`.* FROM `reviews` WHERE `reviews`.`book_id` = 5 ORDER BY `reviews`.`updated_at` DESC
+SELECT `reviews`.* FROM `reviews` WHERE `reviews`.`book_id` = 6 ORDER BY `reviews`.`updated_at` DESC
+SELECT `reviews`.* FROM `reviews` WHERE `reviews`.`book_id` = 7 ORDER BY `reviews`.`updated_at` DESC
+SELECT `reviews`.* FROM `reviews` WHERE `reviews`.`book_id` = 8 ORDER BY `reviews`.`updated_at` DESC
+SELECT `reviews`.* FROM `reviews` WHERE `reviews`.`book_id` = 9 ORDER BY `reviews`.`updated_at` DESC
+SELECT `reviews`.* FROM `reviews` WHERE `reviews`.`book_id` = 10 ORDER BY `reviews`.`updated_at` DESC
+```
