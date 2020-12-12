@@ -1757,7 +1757,7 @@ end
 
 全件表示した場合
 
-![スクリーンショット 2020-10-10 17.32.38 2.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/e365a657-589e-8f9a-6e4b-6bf9b1540366.png
+![スクリーンショット 2020-10-10 17.32.38 2.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/e365a657-589e-8f9a-6e4b-6bf9b1540366.png)
 
 2 ページ目を表示した場合(record/page/2)
 
