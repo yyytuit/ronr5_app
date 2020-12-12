@@ -46,6 +46,6 @@ class Book < ApplicationRecord
       logger.info('deleted: ' + self.inspect)
     end
     def isbn_valid?
-      errors.add(attribute, 'は正しい形式ではありません。') unless isbn =~ /\A([0-9]{3}-)?[0-9]{1}-[0-9]{3,5}-[0-9]{4}-[0-9X]{1}\z/
+      errors.add(:isbn, 'は正しい形式ではありません。') unless isbn =~ /\A([0-9]{3}-)?[0-9]{1}-[0-9]{3,5}-[0-9]{4}-[0-9X]{1}\z/
     end
 end
