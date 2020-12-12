@@ -225,4 +225,9 @@ class RecordController < ApplicationController
     # @books = Book.includes(:reviews).all
     @books = Book.all
   end
+
+  def attr
+    @book = Book.find(1)
+    render plain: @book.price.class
+  end
 end

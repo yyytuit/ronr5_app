@@ -3747,3 +3747,1565 @@ SELECT `reviews`.* FROM `reviews` WHERE `reviews`.`book_id` = 8 ORDER BY `review
 SELECT `reviews`.* FROM `reviews` WHERE `reviews`.`book_id` = 9 ORDER BY `reviews`.`updated_at` DESC
 SELECT `reviews`.* FROM `reviews` WHERE `reviews`.`book_id` = 10 ORDER BY `reviews`.`updated_at` DESC
 ```
+
+## コールバック
+
+コールバックは Active Record による検索/登録/更新/削除、および、検証処理のタイミングで実行されるメソッド。
+
+- ユーザー情報を登録する際にパスワードが指定されていなかったら、ランダムのパスワードを生成
+
+- 書籍情報を削除するさいに、削除される書籍情報を履歴情報として記録する
+
+- 著者情報を削除するさいに、ファイルシステムで管理していたサムネイル画像も削除
+
+- 著者情報が登録/更新されたタイミングで、管理者にメールを送信
+
+など、モデル操作のタイミングでまとめて実行すべき処理はコールバックとして定義することで、同じようなコードがモデルやコントローラに分散するのを防げる。
+
+また Active Record は、実際の保存処理とコールバックとを、1 つのトランザクションとして実行する。
+
+コールバックを利用することで、関連する一覧の処理を、トランザクションを意識することなく記述できるというメリットもある。
+
+### 利用可能なコールバックと実行タイミング
+
+新規登録/更新/削除タイミングで呼び出されるコールバックには、以下のようなものがある。
+
+ちなみに以下の表はコールバックの発生順序に沿っている。
+
+| 登録              | 更新          | 削除           | 実行タイミング       |
+| ----------------- | ------------- | -------------- | -------------------- |
+| berofe_validation | 同様          | -              | 検証処理の直前       |
+| after_validation  | 同様          | -              | 検証処理の直後       |
+| before_save       | 同様          | -              | 保存の直前           |
+| around_save       | 同様          | -              | 保存の前後           |
+| before_create     | before_update | before_destroy | 作成/更新/削除の直前 |
+| around_create     | around_update | around_destroy | 作成/更新/削除の前後 |
+| after_create      | after_update  | after_destroy  | 作成/更新/削除の直後 |
+| after_save        | 同様          | -              | 保存の直後           |
+| after_commit      | 同様          | 同様           | コミットの直後       |
+| after_rollback    | 同様          | 同様           | ロールバックの直後   |
+
+その他、データの取得、オブジェクトの生成タイミングで呼び出されるコールバックもある
+
+| コールバック     | 実行タイミング                         |
+| ---------------- | -------------------------------------- |
+| after_find       | データベースの検索時                   |
+| after_initialize | new による生成、データベースからロード |
+
+after_find/after_initilize メソッドには対応する、before_xxxx メソッドがない点に注意。
+
+これらのコールバックメソッドはメソッドが呼び出されたタイミングで実行される。
+
+逆にいえば、たとえば delete や delete_all のようなメソッドでは、コールバックは呼び出されずすぐにデータの削除が行われる。
+
+| 分類             | トリガーとなるメソッド                                                                                                      |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 作成/更新/削除系 | create,create!,decrement!,destroy,destroy!,destroy_all,increment!,save,save!,toggle!,update,update!,update_attribute,valid? |
+| after_find       | all,first,find,find_by,find_by_sql,last                                                                                     |
+| after_imitialize | new、その他オブジェクト生成を伴うメソッド                                                                                   |
+
+### コールバック実装の基礎
+
+- book.rb
+
+```rb
+class Book < ApplicationRecord
+  #コールバックメソッド
+  after_destroy :history_book
+
+  private
+    def history_book
+      logger.info('deleted: ' + self.inspect)
+    end
+end
+```
+
+#### 条件付きでコールバックを適用する
+
+特定の条件を満たした場合にのみコールバックを作動させたい場合には、if/unless パラメータを指定する。
+
+たとえば、以下は publish 列が unknown でない場合のみ history_book コールバックを実行する例
+
+- book.rb
+
+```rb
+class Book < ApplicationRecord
+# 条件付きでコールバックを適用
+ after_destroy :history_book,
+ unless: Proc.new { |b| b.publish == "unknown" }
+ end
+```
+
+### コールバックのさまざまな定義方法
+
+コールバックメソッドはプライベートメソッドとして定義するのが基本。
+
+しかし状況によって以下のような構文で定義した方が良い場合もある。
+
+#### ブロック形式で定義する
+
+after_destroy メソッドにたいして、コールバック処理を直接ブロックとして指定することもできる。
+
+ブロックの内容がシンプルである場合は、有効な記法。
+
+- book.rb
+
+```rb
+class Book < ApplicationRecord
+# コールバックメソッドをブロック形式で定義
+  after_destroy do |b|
+    logger.info('deleted: ' + b.inspect)
+  end
+end
+```
+
+#### コールバッククラスとして定義する
+
+コールバックを複数のモデルで共有するようなケースでは、コールバックメソッドを別のクラス(コールバッククラス)として外部化した方が再利用性という点で有利。
+
+- book_callbacks.rb
+
+```rb
+class BookCallbacks
+  cattr_accessor :logger
+  self.logger ||= Rails.logger
+
+  def after_destroy(b)
+    logger.info('deleted: ' + b.inspect)
+  end
+end
+```
+
+- book.rb
+
+```rb
+class Book < ApplicationRecord
+  after_destroy BookCallbacks.new
+end
+```
+
+コールバックメソッドそのものの記述はこれまでと同様。
+
+ただし一点注意することは、コールバッククラスは普通の Ruby クラスなので、そのままでは logger オブジェクトを呼び出せないという点。
+
+そこで cattr_accessor メソッドでクラス変数 logger を定義した上で、logger に Rails.logger プロパティ経由でアプリデフォルトのロガーをセットしている。
+
+普通の Ruby クラスからでも logger オブジェクトにアクセスできるようになる。
+
+コールバックをクラスとして定義した場合、Book モデル側では BookCallbacks.new のインスタンを渡すようにする。
+
+# マイグレーション
+
+Rails では、テーブルレイアウトを作成/変更するためのというしくみとしてマイグレーションという機能を提供している。
+
+単にテーブルを準備するためのしくみとして紹介したが、Migration(移行)という名前のとおり、マイグレーション機能は開発途中でのスキーマの変化に際して真価を発揮する。
+
+今回はマイグレーションの仕組みと、さまざまなスキーマ管理の方法について学ぶ。
+
+## マイグレーションのしくみ
+
+まずはマイグレーションの仕組みについて全体像の確認。
+
+![スクリーンショット 2020-11-28 16.40.48.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/4c75c0a3-6032-7b07-d069-465b40948fd4.png)
+
+データベースのスキーマ変更の役割を担うのがマイグレーションファイル。
+
+rails generate コマンドで生成できる。
+
+マイグレーションファイルの名前には生成時のタイムスタンプ値(20201013062804 など)が含まれており、Rails はこの値を使って、そのスクリプトが実行済みであるかどうかを管理する。
+
+具体的には、データベースの shcema_migration テーブルに注目してみる。
+
+マイグレーション機能を利用した場合、chema_migrations テーブルに実行済みマイグレーションファイルのタイムスタンプが記録される。
+
+Rails(rails コマンド)では、schem_migrations テーブルと db/migration フォルダー配下のマイグレーションファイルとを比較し、未実行のマイグレーションを自動的に認識し、実行する。
+
+また、マイグレーション機能では特定のタイミングまでスキーマの状態を戻したり、あるいは、指定されたバージョンだけスキーマをロールバックしたり、といったこともできる。
+
+スキーマの変動が激しい、(場合によっては過去の状態を復元させたい)ような開発の局面ではマイグレーションんは欠かすことのできない機能。
+
+## マイグレーションファイルの構造
+
+- db/migrate/20200623135202_create_books.rb
+
+```rb
+class CreateBooks < ActiveRecord::Migration[5.2]
+  def change
+    create_table :books do |t|
+      t.string :isbn
+      t.string :title
+      t.integer :price
+      t.string :publish
+      t.date :published
+      t.boolean :dl
+
+      t.timestamps
+    end
+  end
+end
+```
+
+マイグレーションファイルでは、まず change メソッドでスキーマ操作の実処理を表すのが基本。
+
+利用できるメソッドにはテーブルの作成/削除をはじめ、インデックスの設置/破棄、フィールドの追加/変更/削除などのメソッドがあるが、まずはもっとも使う create_table メソッドについて理解する。
+
+#### マイグレーションバージョン
+
+Rails4 以前から rails に触れていた人は、マイグレーションファイルの先頭にある「ActiveRecord::Migreation[5.0]」という記述が気になったかもしれない。
+
+Rails5 ではこのようにマイグレーションファイルが「どのバーションの Rails で作成されたか」を表す情報が付与されるようになった。
+
+これによって Rails のバージョンによってマイグレーションの挙動が変わった場合にも、それぞれのバージョンに応じた操作が可能になる。
+
+たとえば Rails5.0 では timestamps メソッドで NOT NULL 制約が付与されるようになった。
+
+そのような挙動の変化が ¥[5.0]という記述の有無によって制御できるようになった。
+
+![スクリーンショット 2020-11-28 17.01.27.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/cca2d4dd-0890-31f5-58d6-6091df7bfdcf.png)
+
+### 引数 toption テーブルオプション
+
+引数 toption はテーブル全体に関わる、またはその他、SQL の CREATETABLE 命令に付与すべきオプション情報を指定する。
+
+具体的には以下のようなオプションがある
+
+| オプション  | 概要                                                                 | デフォルト値 |
+| ----------- | -------------------------------------------------------------------- | ------------ |
+| id          | 主キー列 id を自動生成するか                                         | true         |
+| primary_key | 主キー列の名前(id オプションが true の場合のみ)                      | id           |
+| temporary   | 一時テーブルとして作成するか                                         | false        |
+| force       | テーブルを作成する前にいったん既存テーブルを削除するか               | false        |
+| options     | その他のテーブルオプション(例:options: 'ENGINE=innoDB CHAREST=utf8') | true         |
+
+Rails ではデフォルトで主キー列 id が自動生成される。
+
+特別な理由が無い限り、できるだけけこのルールを変更するべきではない。
+
+もしもデータベース側で id 以外の主キーを設置した場合には、対応するモデル側でも以下のように主キー名を宣言する必要がある。
+
+```rb
+class Book < ApplicationRecord
+  set_primary_key 'book_no'
+end
+```
+
+#### SELECT した結果をもとにテーブルを作成する
+
+ちょっと変わり種のオプションとして、create_table には as オプションもある。
+
+as オプションを利用することで、テーブル作成するさいに(ブロックで個々のフィールドを指定する代わりに)サブクエリを指定できるようになる。
+
+books/reviews テーブルを結合した結果をもとに、テーブル current_reviews を生成するサンプル
+
+- db/migrate/202006xxxxxxx_create_current_reviews.rb
+
+```rb
+create_table :current_reviews, as: 'SELECT books.*, reviews.body FROM books INNER JOIN reviews ON books.id = reviews.book_id'
+```
+
+```
+$ docker-compose run web rails g migration current_reviews
+$ docker-compose run web rails db:migrate
+```
+
+上記はただテーブルを as オプションを使って sql で定義できるだけで、とくに今後新しいレビューをつくると勝手に create_review テーブルにレコードが入っていくわけではない。
+
+### フィールド定義は t.データ型
+
+テーブルに属するフィールドは、create_talbe メソッド配下の t.データ型メソッドできる。
+
+利用できるデータ型と、SQLlite データベース、Ruby のデータ型との対応関係は以下の通り。
+
+| マイグレーション | SQLlite      | Ruby                 |
+| ---------------- | ------------ | -------------------- |
+| integer          | INTEGER      | Fixnum               |
+| decimal          | DECIMAL      | BigDecimal           |
+| float            | FLOAT        | Float                |
+| string           | VARCHAR(225) | String               |
+| text             | TEXT         | String               |
+| binary           | BLOB         | String               |
+| date             | DATE         | Date                 |
+| datetime         | DATETIME     | Time                 |
+| timestamp        | DATETIME     | Time                 |
+| time             | TIME         | Time                 |
+| boolean          | BOOLEAN      | TrueClass/FalseClass |
+
+その他、特殊な列を定義するためのメソッドとして timestamps や references もある。
+
+timestamps メソッドは、日付時刻型の created_at/updated_at 列を生成する。
+
+これから Rails で決められた特別な列で、それぞれのレコードの作成/更新時に作成日時や更新日時を自動設定する。
+
+データの絞り込みなどにも役立つので、無条件に設定しておくのがのぞましい。
+
+references メソッドは外部キー列を生成する。
+
+たとえば「t.references:book」とした場合に、books テーブルの外部キー列とした場合には、books テーブルへの外部キー列として book_id 列を生成する。
+
+[t.reference や外部キー制約についての参考](https://qiita.com/ryouzi/items/2682e7e8a86fd2b1ae47)
+
+### 列制約も定義できる
+
+「t.データ型」メソッドには「制約名:値」の形式で列制約も定義できる。
+
+| 制約名      | 概要                                            |
+| ----------- | ----------------------------------------------- |
+| limit       | 列の桁数                                        |
+| default     | デフォルト値                                    |
+| null        | null を許可するか(デフォルトは true)            |
+| precision   | 数値の全体行(decimal 型)。123.45 であれば 5     |
+| scale       | 小数点以下の桁数(decimal 型)。123.45 であれば 2 |
+| polymorphic | belong_to アソシエーションで利用する列名        |
+| index       | インデックスを追加するか                        |
+| comment     | 列の説明(備考)                                  |
+
+たとえば books テーブルに上記制約を付与している。
+
+- books テーブルの制約
+
+| フィルド名 | データ型     | 制約                       |
+| ---------- | ------------ | -------------------------- |
+| isbn       | VARCHAR(17)  | NOT NULL                   |
+| title      | VARCHAR(100) | NOT NULL                   |
+| price      | DECIMAL      | 全体 5 桁(小数点以下 0 桁) |
+| publish    | VARCHAR(20)  | 技術評論社(デフォルト値)   |
+
+### データベースの値を暗黙的に型変換する
+
+Rails5.0 で追加された ActiveRecord attributesAPI を利用することで、マイグレーションで定義された型(データベースに格納する型)を、モデル側で上書きすることが可能になる。
+
+たとえば books テーブルの price フィールドは integer 型。
+
+しかし、なんらかの都合でアプリ側では float 型として扱いたいという状況があった場合、モデルクラスに attribute メソッドで以下のように宣言する。
+
+- book.rb
+
+```rb
+class Book < ApplicationRecord
+  attribute :price, :float
+end
+```
+
+attribute メソッドの構文は以下のとおり。
+
+- attribute メソッド
+
+```
+attribute(name, type[,default: value])
+--------------------------------------
+name:プロパティ名 type:データ型 value:デフォルト値
+```
+
+ここでは利用してないが default オプションで、値を得られなかった場合のデフォルト値を指定できる。
+
+- record_controller.rb
+
+```rb
+def attr
+  @book = Book.find(1)
+  render plain: @book.price.class
+end
+```
+
+price プロパティの型を確認すると、「Float」という結果が得られる。
+
+## マイグレーションファイルの作成
+
+マイグレーションファイルを作成する方法は以下の 2 種類に大別できる。
+
+1. rails generate model コマンドでモデルと併せて作成する
+
+1. rails generate migration コマンドを使ってマイグレーションファイル単体で作成する
+
+新規にテーブルを作成する場合には、1.でモデルもろとも作成するのが手軽。
+
+既に存在するテーブルに対して、レイアウトの修正を行いたい場合は 2 の方法を利用する。
+
+1 については既に解説済み。
+
+2 の方法は以下
+
+```
+$ rails generate migration name [filed :type...][otpions]
+---------------------------------------------------------
+name: 名前 field: フィールド名 type: データ型 options: 動作オプション
+```
+
+名前とはマイグレーションファイルのクラス名。
+
+自由に命名できるが、全てのマイグレーションファイルの中で一意である必要がある。
+
+また処理内容を識別しやすくするという意味でも、できるだけ具体的な名前を指定することをおすすめする。
+
+そもそもフィールドの追加/削除を行う場合には
+
+- AddXxxxTo テーブル名
+- RemoveXxxxFrom テーブル名
+
+の形式に則った名前を指定すれば、マイグレーションファイルの骨組みだけでなく、具体的な追加/削除のコードも自動生成する。
+
+たとえば、以下は author テーブルに日付型の birth 列を追加する場合のコマンド
+
+```
+$ rails g migration AddBirthToAuthors birth:date
+```
+
+これにより以下のようなコードができる。
+
+- db/migrate/202006xxxxxxx_add_birth_to_author.rb
+
+```rb
+class AddBirthToAuthors < ActiveRecord::Migration[5.2]
+  def change
+    add_column :authors, :birth, :date
+  end
+end
+```
+
+果たして、change メソッドには列を追加するためのコードが自動生成されていることが確認できる。
+
+もちろん、自動生成されたコードはあくまで骨組みにすぎないので、必要に応じて、さまざまな処理を自分で追加できる。
+
+#### 手作業での作成
+
+マイグレーションファイルは手作業で作成することもできる。
+
+無用なトラブルを引き起こさないためにも、まずは rails g migration コマンドを利用するのをおすすめする。
+
+もしも、一からファイルを作成する場合には以下の点に注意。
+
+1. ファイル名とクラス名は対応関係にあること
+1. ActiveRecord::Migration クラスを景勝していること
+
+マイグレーションファイルの名前には、クラス名をアンダースコア形式(すべて小文字で表記し、単語の区切りは「\_」)に変換した上で、先頭にタイムスタンプ値を付与する必要がある。
+
+つまり、クラス名が AddAuthorToBooks であれば、ファイル名は 2020xxxxxxx_add_author_to_books.rb のような名前でなければならない。
+
+特にクラス名をあとから変更したい場合は、ファイル名の変更忘れに注意する必要がある。
+
+## マイグレーションファイルで利用できる主なメソッド
+
+create_table メソッド以外にも、マイグレーションファイルで以下のようなメソッドを利用できる。
+
+- マイグレーションファイルで利用できる主なメソッド
+
+| メソッド                                 | 概要                                                  |
+| ---------------------------------------- | ----------------------------------------------------- |
+| add_column(tname,fname,type[.opt])       | 新規に列を追加                                        |
+| add_index(tname,fname[.i_opt])           | 新規にインデックスを追加                              |
+| add_foreign_key(tname,frname[.fr_opt])   | 外部キーを追加                                        |
+| add_timestanmps(tname)                   | created_at/updated_at 列を追加                        |
+| change_column(tname,fname,type[.opt])    | 既存の列を定義                                        |
+| change_column_null(tname,fname,null)     | 引数 null が false の場合、列の NOT NULL 制約を有効化 |
+| change_column_default(tname,fname,null)  | 列のデフォルト値を引数 default に変更                 |
+| change_table(tname)                      | テーブル定義を変更                                    |
+| change_exists?(tname,fname[,type[.opt]]) | 指定列が存在するかを確認                              |
+| change_tabel(tname[.t_opt])              | 新規テーブルを追加                                    |
+| change_join_tabel(tname1,tname2[.t_opt]) | tname1 と tname2 を紐づける中間テーブルを生成         |
+| drop_tabel(tname[.t_opt])                | 既存のテーブルを削除                                  |
+| index_exists?(tname,fname[.i_opt])       | インデックスが存在するかを確認                        |
+| remove_column(tname,fname[,type,opt])    | 既存の列を削除                                        |
+| remove_columns(tname,fname[,...])        | 既存の列を削除(複数列対応)                            |
+| remove_index(tname [.i_opt])             | 既存のインデックスを削除                              |
+| remove_foreign_key(tname,fname)          | 外部キーを削除                                        |
+| remove_timestamps(tname)                 | 既存の created_at/updated_at 列を削除                 |
+| remove_column(tname,old,new)             | 既存の列名を old から new に変更                      |
+| remove_index(tname,old,new)              | 既存のインデックス名を old から new に変更            |
+| remove_talbe(tname,new)                  | 既存のテーブル名を tname から new に変更              |
+| execute(sql)                             | 任意の SQL 命令を実行                                 |
+
+ほとんどが直感的に利用できるものばかりだが、いくつかのメソッドに補足する。
+
+### テーブル定義を変更する change_table メソッド
+
+change_table メソッドは、テーブルレイアウトの変更やインデックスの追加/削除をまとめて行いたい場合に便利なメソッド
+
+- chanbe_table メソッド
+
+```rb
+change_table tname do |t|
+  ...definition...
+end
+---------------------
+tname: テーブル名 definition: 修正のための命令
+```
+
+- db/migrate/202006xxxxxx_change_books.rb
+
+```rb
+class ChangeBooks < ActiveRecord::Migration[5.2]
+  def change
+    change_table :books do |t|
+      t.string :author # strings型のauthor列を追加
+      t.remove :published, :del # published,del列を削除
+      t.index :title # title列にインデックスを追加
+      t.rename :isbn, :isbn_code # isbn列をisbn_code列にリレーム
+    end
+  end
+end
+```
+
+change_tabel メソッドを利用することで、(他の add_column のようなメソッドと異なり)テーブル名を何度も記述せずにすむため、コードをよりスマートに記述できる。
+
+呼び出しのメソッドも、add_index が index に、remove_column が remove に、rename_column が rename にそれぞれ短くなっている。
+
+change_table メソッドで利用可能なメソッドは以下。
+
+|        |                   |                |                   |
+| ------ | ----------------- | -------------- | ----------------- |
+| index  | change            | change_default | rename            |
+| remove | remove_refarences | remove_index   | remove_timestamps |
+
+### インデックスを追加/削除する add_index/remove_index メソッド
+
+インデックスを追加するのは、add_index メソッドの役割。
+
+```
+$ add_index(tname, fname[,opt])
+-------------------------------
+tname: テーブル名 fname: インデックスを付与するフィールド名
+opt: インデックスオプション
+```
+
+引数 opt には以下のようなオプションを指定できる。
+
+- add_index メソッドの主なオプション
+
+| オプション名 | 概要                                               |
+| ------------ | -------------------------------------------------- |
+| unique       | 一意性制約を付与するか                             |
+| name         | インデックス名                                     |
+| lenght       | インデックスに含まれる列の長さ(SQLlite では未対応) |
+
+具体例は以下
+
+```rb
+add_index :books, :title # 1
+add_index :books, [:publish, :title] # 2
+add_index :books, [:publish, :title], unique: true, name: 'idx_pub_title' # 3
+add_index :books, [:publish, :title], length: { publish: 10, title: 20} # 4
+```
+
+1 はシンプルな例。
+
+books テーブルの title 列にについてインデックスを設置する。
+
+2 は引数 fname を配列にすることで、publish/title 列のような複数フィールドにまたがるマルチカラムインデックスを生成することもできる。
+
+3 は引数 opt を指定した例。
+
+インデックス名はデフォルトで「テーブル名\_フィールド名\_index」のようになるが、自分の名前を指定したい場合には name オプションを使用する。
+
+4 は length オプションを利用して、publish 列の先頭 10 桁、title 列の先頭 20 桁をもとにインデックスを作成している。
+
+length オプションを指定することで、ディスクサイズを節約できるみならず、INSERT 命令を高速化できる。
+
+このように定義したインデックスは remove_index メソッドによって破棄できる。
+
+- remove_index メソッド
+
+```
+remove_index(tname[,opt])
+tname : テーブル名 opt:インデックスオプション
+```
+
+引数 opt には name(インデックス名)、または column(インデックスを構成するフィールド名)を指定できる。
+
+オプション名を省略した場合はフィールド名を指定したものとみなされる。
+
+```rb
+remove_index :books, :title
+# books_title_indexインデックスを削除
+remove_index :books, column: [:publish, :title]
+# publish/title列から構成されるインデックスを削除
+```
+
+ちなみに index をつけた直後（add_index :books, [:publish, :title]）こうなる。
+
+まず普通に books を全体を select すると以下のように表示される
+
+```sql
+MySQL [app_development]> select * from books;
++----+-------------------+--------------------------------------------------------+-------+--------------------+------------+------+---------------------+---------------------+
+| id | isbn              | title                                                  | price | publish            | published  | dl   | created_at          | updated_at          |
++----+-------------------+--------------------------------------------------------+-------+--------------------+------------+------+---------------------+---------------------+
+|  1 | 978-4-7741-8411-1 | 改訂新版JavaScript本格入門                             |  2980 | 技術評論社         | 2016-09-30 |    0 | 2020-11-28 09:19:56 | 2020-11-28 09:19:56 |
+|  2 | 978-4-7980-4803-1 | はじめてのJSP&サーブレット 第2版                       |  2800 | 秀和システム       | 2016-09-27 |    0 | 2020-11-28 09:19:56 | 2020-11-28 09:19:56 |
+|  3 | 978-4-7741-8030-4 | Javaポケットリファレンス                               |  2680 | 技術評論社         | 2016-03-18 |    1 | 2020-11-28 09:19:56 | 2020-11-28 09:19:56 |
+|  4 | 978-4-8222-9876-0 | アプリを作ろう！ Visual C++入門                        |  2000 | 日経BP社           | 2016-06-22 |    1 | 2020-11-28 09:19:56 | 2020-11-28 09:19:56 |
+|  5 | 978-4-8222-9644-5 | アプリを作ろう！ Android入門                           |  2000 | 日経BP社           | 2015-08-21 |    0 | 2020-11-28 09:19:56 | 2020-11-28 09:19:56 |
+|  6 | 978-4-7981-3547-2 | 独習PHP 第3版                                          |  3200 | 翔泳社             | 2016-04-08 |    1 | 2020-11-28 09:19:56 | 2020-11-28 09:19:56 |
+|  7 | 978-4-7741-7984-1 | Swiftポケットリファレンス                              |  2780 | 技術評論社         | 2016-03-04 |    0 | 2020-11-28 09:19:56 | 2020-11-28 09:19:56 |
+|  8 | 978-4-7981-4102-2 | プログラマのためのDocker教科書                         |  3000 | 翔泳社             | 2015-11-19 |    0 | 2020-11-28 09:19:56 | 2020-11-28 09:19:56 |
+|  9 | 978-4-7741-7568-3 | AngularJSアプリケーションプログラミング                |  3700 | 技術評論社         | 2015-08-19 |    0 | 2020-11-28 09:19:56 | 2020-11-28 09:19:56 |
+| 10 | 978-4-7981-4402-3 | 独習ASP.NET 第5版                                      |  3800 | 翔泳社             | 2016-01-21 |    0 | 2020-11-28 09:19:56 | 2020-11-28 09:19:56 |
++----+-------------------+--------------------------------------------------------+-------+--------------------+------------+------+---------------------+---------------------+
+10 rows in set (0.002 sec)
+```
+
+なので、Book.all は id 順に整列する。
+
+```rb
+> Book.all
+Book Load (1.7ms)  SELECT `books`.* FROM `books`
+[#<Book:0x000055f3e645bf48
+  id: 1,
+  isbn: "978-4-7741-8411-1",
+  title: "改訂新版JavaScript本格入門",
+  price: 2980,
+  publish: "技術評論社",
+  published: Fri, 30 Sep 2016,
+  dl: false,
+  created_at: Sat, 28 Nov 2020 09:19:56 UTC +00:00,
+  updated_at: Sat, 28 Nov 2020 09:19:56 UTC +00:00>,
+ #<Book:0x000055f3e645aeb8
+  id: 2,
+  isbn: "978-4-7980-4803-1",
+  title: "はじめてのJSP&サーブレット 第2版",
+  price: 2800,
+  publish: "秀和システム",
+  published: Tue, 27 Sep 2016,
+  dl: false,
+  created_at: Sat, 28 Nov 2020 09:19:56 UTC +00:00,
+  updated_at: Sat, 28 Nov 2020 09:19:56 UTC +00:00>,
+ #<Book:0x000055f3e645ad78
+  id: 3,
+       :
+       ;
+```
+
+ただし、title 列や id,publish 列を限定して select すると文字の昇順となっている。
+
+```sql
+select id, title, publish from books;
++----+--------------------------------------------------------+--------------------+
+| id | title                                                  | publish            |
++----+--------------------------------------------------------+--------------------+
+|  9 | AngularJSアプリケーションプログラミング                | 技術評論社         |
+|  3 | Javaポケットリファレンス                               | 技術評論社         |
+|  7 | Swiftポケットリファレンス                              | 技術評論社         |
+|  1 | 改訂新版JavaScript本格入門                             | 技術評論社         |
+|  5 | アプリを作ろう！ Android入門                           | 日経BP社           |
+|  4 | アプリを作ろう！ Visual C++入門                        | 日経BP社           |
+|  2 | はじめてのJSP&サーブレット 第2版                       | 秀和システム       |
+|  8 | プログラマのためのDocker教科書                         | 翔泳社             |
+| 10 | 独習ASP.NET 第5版                                      | 翔泳社             |
+|  6 | 独習PHP 第3版                                          | 翔泳社             |
++----+--------------------------------------------------------+--------------------+
+10 rows in set (0.001 sec)
+
+select id from books;
++----+
+| id |
++----+
+|  9 |
+|  3 |
+|  7 |
+|  1 |
+|  5 |
+|  4 |
+|  2 |
+|  8 |
+| 10 |
+|  6 |
++----+
+
+select title from books;
++--------------------------------------------------------+
+| title                                                  |
++--------------------------------------------------------+
+| AngularJSアプリケーションプログラミング                |
+| Javaポケットリファレンス                               |
+| Swiftポケットリファレンス                              |
+| 改訂新版JavaScript本格入門                             |
+| アプリを作ろう！ Android入門                           |
+| アプリを作ろう！ Visual C++入門                        |
+| はじめてのJSP&サーブレット 第2版                       |
+| プログラマのためのDocker教科書                         |
+| 独習ASP.NET 第5版                                      |
+| 独習PHP 第3版                                          |
++--------------------------------------------------------+
+10 rows in set (0.001 sec)
+
+select publish from books;
++--------------------+
+| publish            |
++--------------------+
+| 技術評論社         |
+| 技術評論社         |
+| 技術評論社         |
+| 技術評論社         |
+| 日経BP社           |
+| 日経BP社           |
+| 秀和システム       |
+| 翔泳社             |
+| 翔泳社             |
+| 翔泳社             |
++--------------------+
+10 rows in set (0.001 sec)
+```
+
+なので、Rails 側でも select で呼び出すと文字の昇順となている
+
+```rb
+> Book.select(:title)
+=>   Book Load (0.8ms)  SELECT `books`.`title` FROM `books`
+[#<Book:0x000055f3e655b740 id: nil, title: "AngularJSアプリケーションプログラミング">,
+ #<Book:0x000055f3e655b600 id: nil, title: "Javaポケットリファレンス">,
+ #<Book:0x000055f3e655b4c0 id: nil, title: "Swiftポケットリファレンス">,
+ #<Book:0x000055f3e655b380 id: nil, title: "改訂新版JavaScript本格入門">,
+ #<Book:0x000055f3e655b240 id: nil, title: "アプリを作ろう！ Android入門">,
+ #<Book:0x000055f3e655b100 id: nil, title: "アプリを作ろう！ Visual C++入門">,
+ #<Book:0x000055f3e655afc0 id: nil, title: "はじめてのJSP&サーブレット 第2版">,
+ #<Book:0x000055f3e655ae80 id: nil, title: "プログラマのためのDocker教科書">,
+ #<Book:0x000055f3e655ad40 id: nil, title: "独習ASP.NET 第5版">,
+ #<Book:0x000055f3e655ac00 id: nil, title: "独習PHP 第3版">]
+
+> Book.select(:publish)
+=>   Book Load (0.8ms)  SELECT `books`.`publish` FROM `books`
+[#<Book:0x000055f3e659a170 id: nil, publish: "技術評論社">,
+ #<Book:0x000055f3e659a030 id: nil, publish: "技術評論社">,
+ #<Book:0x000055f3e6599ef0 id: nil, publish: "技術評論社">,
+ #<Book:0x000055f3e6599db0 id: nil, publish: "技術評論社">,
+ #<Book:0x000055f3e6599c70 id: nil, publish: "日経BP社">,
+ #<Book:0x000055f3e6599b30 id: nil, publish: "日経BP社">,
+ #<Book:0x000055f3e65999f0 id: nil, publish: "秀和システム">,
+ #<Book:0x000055f3e65998b0 id: nil, publish: "翔泳社">,
+ #<Book:0x000055f3e6599770 id: nil, publish: "翔泳社">,
+ #<Book:0x000055f3e6599630 id: nil, publish: "翔泳社">]
+```
+
+ここから title と publish を remove_index してみる。(title だけ remove_index はできない)
+
+すると DB で呼び出すと以下のように整列されず、id 昇順になっていることがわかる。
+
+つまり idex が削除できたということ。
+
+```sql
+MySQL [app_development]> select id, title, publish from books;
++----+--------------------------------------------------------+--------------------+
+| id | title                                                  | publish            |
++----+--------------------------------------------------------+--------------------+
+|  1 | 改訂新版JavaScript本格入門                             | 技術評論社         |
+|  2 | はじめてのJSP&サーブレット 第2版                       | 秀和システム       |
+|  3 | Javaポケットリファレンス                               | 技術評論社         |
+|  4 | アプリを作ろう！ Visual C++入門                        | 日経BP社           |
+|  5 | アプリを作ろう！ Android入門                           | 日経BP社           |
+|  6 | 独習PHP 第3版                                          | 翔泳社             |
+|  7 | Swiftポケットリファレンス                              | 技術評論社         |
+|  8 | プログラマのためのDocker教科書                         | 翔泳社             |
+|  9 | AngularJSアプリケーションプログラミング                | 技術評論社         |
+| 10 | 独習ASP.NET 第5版                                      | 翔泳社             |
++----+--------------------------------------------------------+--------------------+
+10 rows in set (0.001 sec)
+```
+
+### 外部キー制約を追加/削除 add_foreign_key メソッド
+
+外部キー制約を追加するのは add_foreign_key メソッドの役割。
+
+- add_foreign_key メソッド
+
+```
+add_foreign_key(tname,fname [,opt])
+------------------------------------
+tname: テーブル名 frname: 参照先のテーブル名
+opt: 外部キーオプション
+```
+
+- 主な外部キーオプション
+
+| オプション  | 概要                                             |
+| ----------- | ------------------------------------------------ |
+| column      | 外部キー列の名前(デフォルトは参照先テーブル\_id) |
+| primary_key | 参照先テーブルの主キー名(デフォルトは id)        |
+| name        | 制約名                                           |
+| on_delete   | 削除時の挙動                                     |
+| on_update   | 更新時の挙動                                     |
+
+on_delete/on_update オプションは参照先テーブルが更新/削除された場合の参照元テーブルの挙動を指定するための設定。
+
+- on_delete/on_update オプションの設定値
+
+| 設定値    | 概要                                       |
+| --------- | ------------------------------------------ |
+| :nullify  | 参照列の値を null に設定                   |
+| :cascade  | 対応するレコードの値を更新                 |
+| :restrict | 外務キー制約違反のエラーを通知(デフォルト) |
+
+```rb
+add_foreign_key :reviews, :books # 1
+add_foreign_key :reviews, :books, on_update: :cascade, on_delete: :nullify #2
+```
+
+1 はもっともシンプルな例で、reviews テーブルから books テーブルを参照するための外部キー列 book_id に対して、外部キー制約を設定する。
+
+on_update/on_delete オプションのデフォルト値は:restrict なので、この状態で books テーブルのレコードを削除した場合、外務キー制約でエラーになる。
+
+2 は明示的に on_update/on_delete オプションを指定した例。
+
+on_update では:cascade が設定されているので、books テーブルの変更によって対応する reviews テーブルの外部キーも更新される。
+
+一方、on_delete には:bullify が設定されているので、books テーブルのレコードが削除することで、reviews テーブルの外部キー列には null がセットされる。
+
+このように、外部キー制約を設定することで、テーブル同志の整合関係を自動的に維持できる。
+
+[t.reference や外部キー制約についての参考](https://qiita.com/ryouzi/items/2682e7e8a86fd2b1ae47)
+
+ちなみに以下のように reviews のマイグレーションは設定されいる
+
+- db/migrate/20200623154338_create_reviews.rb
+
+```rb
+class CreateReviews < ActiveRecord::Migration[5.2]
+  def change
+    create_table :reviews do |t|
+      t.references :book, foreign_key: true
+      t.references :user, foreign_key: true
+      t.integer :status, default: 0, null: false
+      t.text :body
+
+      t.timestamps
+    end
+  end
+end
+```
+
+上記の状態で book を削除しようとするとエラーになる。
+
+```rb
+> Book.first.delete
+  Book Load (0.8ms)  SELECT  `books`.* FROM `books` ORDER BY `books`.`id` ASC LIMIT 1
+  Book Destroy (7.0ms)  DELETE FROM `books` WHERE `books`.`id` = 1
+ActiveRecord::StatementInvalid: Mysql2::Error: Cannot delete or update a parent row: a foreign key constraint fails (`app_development`.`reviews`, CONSTRAINT `fk_rails_924a0b30ca` FOREIGN KEY (`book_id`) REFERENCES `books` (`id`)): DELETE FROM `books` WHERE `books`.`id` = 1
+from /usr/local/bundle/gems/mysql2-0.5.3/lib/mysql2/client.rb:131:in `_query'
+Caused by Mysql2::Error: Cannot delete or update a parent row: a foreign key constraint fails (`app_development`.`reviews`, CONSTRAINT `fk_rails_924a0b30ca` FOREIGN KEY (`book_id`) REFERENCES `books` (`id`))
+from /usr/local/bundle/gems/mysql2-0.5.3/lib/mysql2/client.rb:131:in `_query'
+```
+
+なので、on_delete: :cascade を入れる。こうすることで親の変更があっても一緒に更新がされるので
+
+なので、depedent: :destory など宣言せずとも book を削除すると紐づくレビューも削除される
+
+```rb
+class CreateReviews < ActiveRecord::Migration[5.2]
+  def change
+    create_table :reviews do |t|
+      t.references :book, foreign_key: {on_delete: :cascade}
+      t.references :user, foreign_key: true
+      t.integer :status, default: 0, null: false
+      t.text :body
+
+      t.timestamps
+    end
+  end
+end
+```
+
+```rb
+> Book.first.delete
+/usr/local/bundle/gems/activerecord-5.2.4.3/lib/active_record/associations.rb:1855: warning: Using the last argument as keyword parameters is deprecated; maybe ** should be added to the call
+/usr/local/bundle/gems/activerecord-5.2.4.3/lib/active_record/associations.rb:1368: warning: The called method `has_many' is defined here
+   (0.5ms)  SET NAMES utf8,  @@SESSION.sql_mode = CONCAT(CONCAT(@@sql_mode, ',STRICT_ALL_TABLES'), ',NO_AUTO_VALUE_ON_ZERO'),  @@SESSION.sql_auto_is_null = 0, @@SESSION.wait_timeout = 2147483
+/usr/local/bundle/gems/activerecord-5.2.4.3/lib/active_record/connection_adapters/mysql/database_statements.rb:12: warning: Using the last argument as keyword parameters is deprecated; maybe ** should be added to the call
+/usr/local/bundle/gems/activerecord-5.2.4.3/lib/active_record/connection_adapters/abstract/query_cache.rb:95: warning: The called method `select_all' is defined here
+  Book Load (0.5ms)  SELECT  `books`.* FROM `books` ORDER BY `books`.`id` ASC LIMIT 1
+/usr/local/bundle/gems/activemodel-5.2.4.3/lib/active_model/type/integer.rb:13: warning: Using the last argument as keyword parameters is deprecated; maybe ** should be added to the call
+/usr/local/bundle/gems/activemodel-5.2.4.3/lib/active_model/type/value.rb:8: warning: The called method `initialize' is defined here
+  Book Destroy (2.0ms)  DELETE FROM `books` WHERE `books`.`id` = 1
+
+  Review.first
+  Review Load (0.4ms)  SELECT  `reviews`.* FROM `reviews` ORDER BY `reviews`.`updated_at` DESC LIMIT 1
+=> #<Review:0x0000562cf2a0e928
+ id: 3,
+ book_id: 2,
+ user_id: 2,
+ status: "draft",
+ body: "とても役に立ちます。サンプルたくさん紹介されていてお勧めの一冊です。",
+ created_at: Sun, 29 Nov 2020 07:28:42 UTC +00:00,
+ updated_at: Sun, 29 Nov 2020 07:28:42 UTC +00:00>
+```
+
+今度は rollback して on_delete: :nullify を入れてみる
+
+```rb
+class CreateReviews < ActiveRecord::Migration[5.2]
+  def change
+    create_table :reviews do |t|
+      t.references :book, foreign_key: { on_delete: :nullify }
+      t.references :user, foreign_key: true
+      t.integer :status, default: 0, null: false
+      t.text :body
+
+      t.timestamps
+    end
+  end
+end
+```
+
+```rb
+)> Book.first
+id: 1,
+ isbn: "978-4-7741-8411-1",
+ title: "改訂新版JavaScript本格入門",
+ price: 2980,
+ publish: "技術評論社",
+ published: Fri, 30 Sep 2016,
+ dl: false,
+ created_at: Sun, 29 Nov 2020 06:57:41 UTC +00:00,
+ updated_at: Sun, 29 Nov 2020 06:57:41 UTC +00:00>
+
+ > Book.first.reviews
+ [#<Review:0x000055c992ddec38
+  id: 1,
+  book_id: 1,
+  user_id: 2,
+  status: "draft",
+  body: "JavaScriptを使うなら、まず、目を通しておきたい本ですね。",
+  created_at: Sun, 29 Nov 2020 06:57:41 UTC +00:00,
+  updated_at: Sun, 29 Nov 2020 06:57:41 UTC +00:00>,
+ #<Review:0x000055c992dc5788
+  id: 2,
+  book_id: 1,
+  user_id: 3,
+  status: "published",
+  body: "JavaScriptの基本を振り返りたいときにはこの本を頼りにしています。",
+  created_at: Sun, 29 Nov 2020 06:57:41 UTC +00:00,
+  updated_at: Sun, 29 Nov 2020 06:57:41 UTC +00:00>]
+
+
+Book.first.delete
+  Book Load (0.8ms)  SELECT  `books`.* FROM `books` ORDER BY `books`.`id` ASC LIMIT 1
+  Book Destroy (2.6ms)  DELETE FROM `books` WHERE `books`.`id` = 1
+=> #<Book:0x0000559339480f90
+ id: 1,
+ isbn: "978-4-7741-8411-1",
+ title: "改訂新版JavaScript本格入門",
+ price: 2980,
+ publish: "技術評論社",
+ published: Fri, 30 Sep 2016,
+ dl: false,
+ created_at: Sun, 29 Nov 2020 07:01:15 UTC +00:00,
+ updated_at: Sun, 29 Nov 2020 07:01:15 UTC +00:00>
+
+pry(main)> Review.first
+  Review Load (0.7ms)  SELECT  `reviews`.* FROM `reviews` ORDER BY `reviews`.`updated_at` DESC LIMIT 1
+=> #<Review:0x000055933a135330
+ id: 1,
+ book_id: nil,
+ user_id: 2,
+ status: "draft",
+ body: "JavaScriptを使うなら、まず、目を通しておきたい本ですね。",
+ created_at: Sun, 29 Nov 2020 07:01:15 UTC +00:00,
+ updated_at: Sun, 29 Nov 2020 07:01:15 UTC +00:00>
+```
+
+### 任意の SQL 命令を実行する execute メソッド
+
+マイグレーションファイルには様々なメソッドが提供されている。
+
+基本的なスキーマ定義はおおよそまかなうことができるが、それでも全ての SQL 命令をサポートしているわけではない。
+
+たとえばマイグレーションでは、ENUM、GEOGRAPHY、XLM などのデータベース固有の特殊型はもちろん、CHAR、NVARCHAR、LONGTEXT など表現できない型は多くある。
+
+また、CHECK 制約やデータベースオプジェクトのビューやトリガーの作成も対応していない。
+
+これらを表現したいケースでは excute メソッドで直接 SQL 命令を記述する必要がある.
+
+たとえば、以下は books テーブルから技術評論社の書籍だけを取り出した gihyo_books ビューを定義する例。
+
+```rb
+execute "CREATE VIEW gihyo_books AS SELECT * FROM books WHERE publish ='技術評論社'"
+```
+
+ただし excute メソッドは往々にしてマイグレーションファイルの可搬性を損なう可能性がある。
+
+例えば SQLLite で動作する SQL 命令が必ず MySQL で動作するとは限らない。
+
+あくまで最終的な手段として利用すべき。
+
+まずは標準的なメソッドでの操作を検討すべき。
+
+### HABTM 中間テーブルを生成する create_join_table メソッド
+
+HBTM(has_and_belogs_to_many)関係とは m:n の関係のこと。
+
+create_join_tabel メソッドは HABTM 関係での中間テーブルを作成する
+
+- create_join_table メソッド
+
+```
+create_join_table(table1, table2, [,opts])
+------------------------------------------
+table1, table2: 紐づけるテーブル opts: 中間テーブルオプション
+```
+
+中間テーブルは、外部キー以外の列を持ってないという制約があるが、create_join_table メソッドを利用すれば、中間テーブルをもたずに多対多が実現できる。
+
+- db/migrate/20200623152808_create_join_table_author_book.rb
+
+```rb
+class CreateJoinTableAuthorBook < ActiveRecord::Migration[5.2]
+  def change
+    create_join_table :authors, :books do |t|
+      # t.index [:aouthor_id, :book_id]
+      # t.index [:book_id, :aouthor_id]
+    end
+  end
+end
+```
+
+## マイグレーションファイルの実行
+
+マイグレーションファイルを実行するには、rails コマンドを利用する。
+
+未実行のマグレーションファイルを実行するには以下。
+
+```
+$ rails db:migrate
+```
+
+rails db:migrate コマンドは、schema_migrations テーブルと現在の db/migrate フォルダーとを比較し、未実行のマイグレーションファイルを検出&実行する。
+
+他にも rails コマンドでは様々なサブコマンドを提供している。
+
+- マイグレーション関連の rails コマンド
+
+| コマンド         | 概要                                                                                           | 例                                                         |
+| ---------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| db:migrate       | 指定されたバージョンまで移行(VERSION 未指定の場合、最新に)                                     | rails db:migrate VERSION=2016205000859                     |
+| db:rollback      | 指定ステップだけバージョンを戻す                                                               | rails db:rollback STEP=5                                   |
+| db:migrate:redo  | 指定ステップだけバージョンを戻して、再度実行                                                   | rails db:migrate:redo STEP=5                               |
+| db:migrate:reset | データベースをいったん削除し、再作成した上で、最新バージョンとなるようなマイグレーションを作成 | rails:db:migrate:reset DISABLE_DATABASE_ENVIRONMENT_CHEK=1 |
+
+### RAILS_ENV オプション
+
+rails コマンドでは、デフォルトで database.yml で定義された開発データベースにに対して処理を行う。
+
+もしもテストデータベースや本番データベースに対しても処理を行いたい場合には、以下のように RAILS_ENV オプションを指定する。
+
+```
+$ rails db:migrate RAILS_ENV=test
+```
+
+### VERBOSE オプション
+
+rails コマンドは、デフォルトでマイグレーションの処理過程を詳細に通知する。
+
+これらの出力を停止したいならば、以下のように VERBOSE オプションに false をセットする。
+
+```
+$ rails db:migrate VERBOSE=false
+```
+
+#### 出力の制御
+
+マイグレーションファイルの側で任意のメッセージを出力したり、一部のメッセージを停止したりすることもできる
+
+- 2020xxxxxx_add_author_to_books.rb
+
+```rb
+def change
+  say 'Add birth column to authors table.'
+  supper_messages do
+    add_colum :authors, :birth, :date
+  end
+end
+```
+
+## リバーシブルなマイグレーションファイル
+
+マイグレーションのルールを記述する基本は、まずは change メソッド。
+
+Rails の change メソッドは賢くできており、スキーマをバージョンアップ(更新)する場合はもちろん、前のバージョンに戻す場合にも、自動的に「逆の処理」を生成し、特定の状態までロールバックしてくれる。
+
+もっとも、すべてのケースでロールバックが可能というわけではない。
+
+たとえば、drop_table メソッドは標準ではロールバックできない(=テーブルを再作成できない)。
+
+「hoge テーブルを削除する」という情報だけでは、どんな hoge テーブルを作成して良いか、Rails が判断できないため。
+
+標準でロールバック可能なメソッドは以下のとおり。
+
+- add_column
+- add_index
+- add_reference
+- add_timestamps
+- change_table
+- create_table
+- creata_join_table
+- remove_timestamps
+- rename_column
+- rename_index
+- remove_reference
+- rename_table
+
+それ以外のメソッドを change メソッドに含んでいる場合には、以下のような方法で対処する。
+
+### ロールバックのための情報を追加する remove_column/drop_table
+
+そのままではロールバックに対応していないが、情報を追加することでロールバックできるようなるメソッドがある。
+
+それは remove_column/drop_table メソッド。
+
+remove_column メソッドは削除する列の情報を引数で明記しておくと、ロールバック可能になる。
+
+- 2020xxxxxx_remove_birth_from_authors.rb
+
+```rb
+def change
+  remove_column :authors, :birth, :date
+  # 「remove_column :authors, :birth」ではデータ型が不明なのでロールバック不可
+end
+```
+
+よく似たメソッドとして、複数列をまとめて削除できる remove_columns メソッドもあるが、こちらは列情報を指定できないため、ロールバックできない。
+
+また、drop_table メソッドも、削除すべきテーブルの列情報を明示しておくことで、ロールバック可能になる。
+
+ブロック配下の列定義については、create_table メソッドに準ずる。
+
+### バージョンアップ/ダウンの処理を分岐する reversible メソッド
+
+reversible メソッドを利用することで、change メソッドの中でバージョンアップ時の処理とバージョンダウン時の処理を分岐して記述できるようになる。
+
+- reversible メソッド
+
+```rb
+reversible do |dir|
+  dir.up do
+    ...statements_up...
+  end
+  dir.down do
+    ...statements_down...
+  end
+end
+```
+
+```
+dir: マイグレーション処理を管理するためのオブジェクト
+statements_up: バージョンアップ時の処理
+statements_down: バージョンダウン時の処理
+```
+
+books テーブルを作成するさいに、併せて「技術評論社の書籍だけを抜き出した gihyo_books ビュー作成する」例。
+
+マイグレーションではビューを生成するためのメソッドではないので、excute メソッドはロールバック不可のメソッドなので、reversible メソッドで、それぞれビューを追加/削除するための処理を表す。
+
+- 2020xxxxxx_create_books.rb
+
+```rb
+class CreateBooks < ActiveRecord::Migration[5.0]
+  def change
+    create_table :books do |t|
+      ...中略...
+    end
+
+    reversible do |dir|
+      dir.up do
+        execute 'CREATE VIEW gihyo_books AS SELECT * FROM books WHERE publish = "技術評論社"'
+      end
+      dir.down do
+        execute 'DROP VIEW gihyo_books'
+      end
+    end
+  end
+end
+```
+
+### バージョンアップ/ダウンのを分岐する up/down メソッド
+
+change メソッドの代わりに、バージョンアップ/ダウン時の jino(これまでの change メソッド)を、down メソッドがバージョンダウン時の処理をそれぞれ表す。
+
+たとえば先ほどのリストを up/down メソッドで表したのが、リスト。
+
+- 2020xxxxxx_create_books.rb
+
+```rb
+class CreateBooks < ActiveRecord::Migration[5.0]
+  def up
+    create_table :books do |t|
+      ...中略...
+    end
+    execute 'CREATE VIEW gihyo_books AS SELECT * FROM books WHERE publish = "技術評論社"'
+  end
+
+  def down
+    drop_table :books
+    execute 'DROP VIEW gihyo_books'
+  end
+end
+```
+
+reversible メソッドと up/down メソッドはあ互いに置き換え可能。
+
+いずれを利用するかは、全体のうち、どの程度がロールバック可能かによって判断すること。
+
+処理のすべて(もしくは大部分)がロールバックできない場合には、up/down メソッドに分離した方が可読性は向上する。
+
+一方、ロールバックできない処理が一部だけの場合は、そこだけを reversible メソッドで二重化した方がコードは短くまとめられる。
+
+いずれを利用すべきかは一概にはいえないが、後々のコードの読みやすさを考え、なんでも reversible メソッドに詰め込むのはさけること。
+
+## スキーマファイルによる再構築
+
+マイグレーションは、とても便利な仕組みだが、1 からデータベースを再構築する上で最適なツールとは言えない。
+
+変更の履歴をすべて追うのは効率的でないだけでなく、予期せぬエラーを発生させる原因にもなる。
+
+そこで Rails では、スキーマの更新履歴を表すマイグレーションファイルとは別に最新のスキーマ情報を表すスキーマファイル(db/schema.rb)を用意している。
+
+中身を確認するとわかるが、スキーマファイルとは要するにマイグレーションファイルの集合。
+
+- schema.rb
+
+```rb
+ActiveRecord::Schema.define(version: 2020_11_29_045813) do
+
+  create_table "authors", options: "ENGINE=InnoDB DEFAULT CHARSET=utf8", force: :cascade do |t|
+    t.bigint "user_id"
+    t.string "name"
+    t.date "birth"
+    t.text "address"
+    t.string "ctype"
+    t.binary "photo"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["user_id"], name: "index_authors_on_user_id"
+  end
+
+  create_table "authors_books", id: false, options: "ENGINE=InnoDB DEFAULT CHARSET=utf8", force: :cascade do |t|
+    t.bigint "author_id", null: false
+    t.bigint "book_id", null: false
+  end
+
+  create_table "books", options: "ENGINE=InnoDB DEFAULT CHARSET=utf8", force: :cascade do |t|
+    t.string "isbn"
+    t.string "title"
+    t.integer "price"
+    t.string "publish"
+    t.date "published"
+    t.boolean "dl"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+  end
+  :
+  :
+end
+```
+
+マイグレーションの実行によって自動的に更新され、最新のスキーマ情報を Ruby スクリプトとして表現している。
+
+スキーマファイルは一からデータベースを再構築する場合はもちろん、既存のデータベースを異なるデータベースに対応するアプリを配布する場合などに有用である。
+
+また現在のスキーマ情報を一望したい場合にも、スキーマファイルは利用できる。
+
+スキーマファイルをデータベースに展開することは以下のようにしている。
+
+```
+$ rails db:schema:load
+-- create_table("authors", {:force=>true})
+-> 0.461s
+ ...中略...
+-- initialize_schema_migrations_table()
+-> 0.0030s
+```
+
+現在のデータベースを破棄して、最新のスキーマ情報で再構築したいならば以下のようにしても構わない。
+
+```
+$ rails db:reset
+```
+
+冒頭で述べたように、スキーマファイルは自動的に更新されるが、手動で出力することもできる。
+
+なんらかの事情でマイグレーションを経由せずにスキーマを更新した場合(本来避けるべき)や、既存のデータベースからスキーマファイルを生成したいという場合に利用できる。
+
+```
+> rails db:schema:dump
+```
+
+#### .sql ファイルを作成する方法
+
+データベースの現在のスキーマを(Ruby スクリプトとしてでなく)SQL スクリプトとして取得したい場合には、以下のようにする。
+
+データベース固有のオブジェクトも併せてダンプしたい場合には、こちらの方法を利用する必要がある。
+
+```
+$ rails db:structure:dump
+```
+
+## データの初期化
+
+スキーマが準備できたら、データを初期化する必要がある。
+
+Rails では初期化するために、シードファイルとフィクスチャという 2 つのアプローチを提供している。
+
+いずれも rails コマンド経由でデータベースにデータを提供するため、使い分けが曖昧になりやすいが、もともとフィクスチャ(fixture)とはソフトウェア用語でテスト時のアプリの初期状態のことを、シード(seed)とは英語で種のことを、それぞれ意味する。
+
+語源からすれば、フィクスチャはテストデータの投入に、シードファイルはマスターテーブルなどの初期データを投入するために利用するのが基本と考えれば良い。
+
+### シードファイル
+
+シードファイルは、単なる Ruby のスクリプトコードにすぎない。
+
+よって、新たに覚えなければならないというものはなく、ただ Ruby(Active Record)でデータを生成/保存するコードを記述していくだけで OK。
+
+作成したコードは、db/seed.rb として保存する。
+
+たとえば以下は books テーブルにデータを投入するためのコード。
+
+- seed.rb
+
+```rb
+Book.create(id: 1, isbn:'978-4-7741-8411-1', title: '改訂新版JavaScript本格入門', price: 2980, publish: '技術評論社', published: '2016-09-30', dl: false)
+Book.create(id: 2, isbn: '978-4-7980-4803-1', title: 'はじめてのJSP&サーブレット 第2版', price: 2800, publish: '秀和シシテム', published: '2016-09-27', dl: false)
+Book.create(id: 3, isbn: '978-4-7741-8030-4', title: 'Javaポケットリファレンス', price: 2680, publish: '技術評論社', published: '2016-03-18', dl: true)
+```
+
+作成したシードファイルは、rails コマンドによって実行できる。
+
+```
+$ rails db:seed
+```
+
+データベースの作成からスキーマの構築、初期データの投入までをまとめて行いたいならば、以下のようにすることもできる。
+
+```
+$ rails db:setup
+```
+
+### フィクスチャ
+
+純粋な Ruby スクリプトであるシードファイルに対して、フィクスチャファイルは YAML 形式で記述できる。
+
+以下ば books テーブルに投入することを想定したフィクスチャ。
+
+フィクスチャファイルは test/fixtures フォルダー配下に「テーブル名.yml」という名前で保存する。
+
+- book.yml
+
+```yml
+modernjs:
+  id: 1
+  isbn: 978-4-7741-8411-1
+  title: 改訂新版JavaScript本格入門
+  price: 2980
+  publish: 技術評論社
+  published: 2016-09-30
+  dl: false
+
+jsp:
+  id: 2
+  isbn: 978-4-7980-4803-1
+  title: はじめてのJSP&サーブレット 第2版
+  price: 2800
+  publish: 秀和システム
+  published: 2016-09-27
+  dl: false
+
+java:
+  id: 3
+  isbn: 978-4-7741-8030-4
+  title: Javaポケットリファレンス
+  price: 2680
+  publish: 技術評論社
+  published: 2016-03-18
+  dl: true
+  :
+  :
+ ...攻略...
+```
+
+レコードを識別するラベル(ここでは jsp:など)の配下に、「フィールド名:値」の形式で定義するわけである。
+
+YAML 形式のインデントは、タブ文字ではなく空白(一般的には半角スペース 2 個)で表現しなければならない点に注意すること。
+
+フィクスチャファイルでは、外部キーもシンプルに記述できる。
+
+たとえば、users テーブルと、これを参照する reviews テーブルであれば、以下のように記述できる。
+
+- user.yml
+
+```yml
+yyamada:
+  id: 1
+  username: yyamada
+  password_digest: $2a$10$uTwYyniemA7y7.z80yw17uqmRzN/LggEoSzUe.tXGdCUWPvYp9M2m
+  email: yyamada@wings.msn.to
+  dm: true
+  roles: admin,manager
+  reviews_count: 2
+
+isatou:
+  id: 2
+  username: isatou
+  password_digest: $2a$10$uTwYyniemA7y7.z80yw17uqmRzN/LggEoSzUe.tXGdCUWPvYp9M2m
+  email: isatou@wings.msn.to
+  dm: false
+  roles: admin
+  reviews_count: 2
+
+hsuzuki:
+  id: 3
+  username: hsuzuki
+  password_digest: $2a$10$uTwYyniemA7y7.z80yw17uqmRzN/LggEoSzUe.tXGdCUWPvYp9M2m
+  email: hsuzuki@wings.msn.to
+  dm: true
+  roles: manager
+  reviews_count: 2
+
+tyamamoto:
+  id: 4
+  username: tyamamoto
+  password_digest: $2a$10$uTwYyniemA7y7.z80yw17uqmRzN/LggEoSzUe.tXGdCUWPvYp9M2m
+  email: tyamamoto@wings.msn.to
+  dm: false
+  roles: member
+  reviews_count: 1
+
+shayashi:
+  id: 5
+  username: shayashi
+  password_digest: $2a$10$uTwYyniemA7y7.z80yw17uqmRzN/LggEoSzUe.tXGdCUWPvYp9M2m
+  email: shayashi@wings.msn.to
+  dm: true
+  roles: member
+  reviews_count: 2
+
+nkakeya:
+  id: 6
+  username: nkakeya
+  password_digest: $2a$10$uTwYyniemA7y7.z80yw17uqmRzN/LggEoSzUe.tXGdCUWPvYp9M2m
+  email: nami-piano@nifty.com
+  dm: true
+  roles: manager,member
+  reviews_count: 0
+  :
+  :
+```
+
+- reviews.yml
+
+```yml
+modernjs_1:
+  book: modernjs
+  user: isatou
+  status: 0
+  body: JavaScriptを使うなら、まず、目を通しておきたい本ですね。
+
+modernjs_2:
+  book_id: modernjs
+  user_id: hsuzuki
+  status: 1
+  body: JavaScriptの基本を振り返りたいときにはこの本を頼りにしています。
+
+jsp_1:
+  book: jsp
+  user: isatou
+  status: 0
+  body: とても役に立ちます。サンプルたくさん紹介されていてお勧めの一冊です。
+
+jsp_2:
+  book: jsp
+  user: tyamamoto
+  status: 1
+  body: 丁寧に書かれています。サンプルも多く、分かりやすくて良いです。
+  :
+  :
+```
+
+外部キーが「モデル名:参照先のラベル」の形式で表現されている点に注目。
+
+本来であれば、user_id 列には users テーブルの対応する id 値が瀬戸されるべきだが、常に参照先のテーブルの id 値を意識していなければならないというのも面倒。
+
+そもそも users テーブルの情報を変更した場合などは id 値も変化してしまう可能性がある。
+
+これは望ましい状況ではないので、ラベルで持って参照先を識別する。
+
+これによって、本来の id 値の意識することなく、両者を関連付けることができる。
+
+なお、ラベルによる関連付けを行う場合は、users.yml 側で id 値は明示せず、Rails で自動採番させるようにしないといけない。
+
+作成したフィクスチャファイルは、rails コマンドによって実行できる。
+
+```
+$ rails db:fixtures:load
+```
+
+FIXTURES オプションを省略した場合には、/text/fixtures フォルダー配下のすべてのフィクスチャが展開される。
+
+また、現在の環境(デフォルトは開発環境)以外にフィクスチャを展開したい場合には、マイグレーションのときと同じく「RAILS_ENV=prduction」のようなオプションを付与する。
+
+#### フィクスチャで大量データを生成する
+
+フィクスチャでは、テンプレートではファイルのようにスクリプトブロックを埋め込むこともできない。
+
+これによって、一定の規則をもった大量を一気に作成することが可能になる。
+
+例えば、以下のように 0~9 の番号が振られた書籍データを生成する例。
+
+- books.yml
+
+```yml
+<% 0.upto(9) do |n| %>
+book<%= n %>:
+isbn: 978-4-7741-5878-<%= n %>
+title: 書名タイトル<%= n %>
+price: <%= 1000 + n %>
+publish: 出版社<%= n %>
+published: 2020-12-1
+<% end %>
+```
+
+#### 日付/時刻に関する便利なメソッド
+
+Active Support では、標準の Date/Time オブジェクトを拡張して、より簡単に相対的な日付を取得できる。
+
+たとえば、「Time.now.yesterday」で昨日の日付を求めることができる。
+
+特に、以下で挙げるものはよく利用する。
+
+- 日付/時刻に関する便利なメソッド
+
+| メソッド          | 概要                                                 |
+| ----------------- | ---------------------------------------------------- |
+| yesterday         | 昨日                                                 |
+| tomorrow          | 明日                                                 |
+| prev_xxx          | 前年/月/週(xxxx は year、month、week)                |
+| next_xxx          | 翌年/月/週(xxxx は year、month、week)                |
+| beginning_of_xxxx | 年/四半期/月/週の最初の日(xxxx は year、month、week) |
+| end_of_xxxx       | 年/四半期/月/週の最後の日(xxxx は year、month、week) |
+
+また、日付/時間の間隔を求めるならば、「3.months.ago」(3 ヶ月前)、「3.months.from_now」(3 ヶ月後)のように Numeric オブジェクトのメソッドとして表現できる。
+
+太字の部分は、単位に応じて以下のものも利用できる(month のような単数形を可)。
+
+#### ドキュメンテーションコメントで仕様書を作成する RDoc
+
+ドキュメンテーションコメントとは、ファイルの先頭やクラス/メソッド宣言などの直前に記述し、クラス/メンバーの説明を記述するための「特定のルールに則った」コメントのこと。
+
+Ruby の標準ツールである RDoc(Ruby Documentation System)を利用することで、API ドキュメントを自動生成できるのが特徴。
+
+ソースコードと一体で管理されているので、ソースと説明の同期を取りやすいというメリットがある。
+
+あとからコードを読みやすくするという意味でも、最低限、ドキュメンテーションコメントに沿ったコメントくらいは残しておく癖を付けておきたいもの。
+
+以下はドキュメンテーションの例。
+
+ドキュメンテーションコメントとは言っても記法自体は通常のコメント構文がベースとなっているため、ごく直感的に記述できる。
+
+固有の決まりもあるが、まずはサンプルの内容を理解しておけば、日常的な記述には困らない。
+
+![スクリーンショット 2020-12-02 22.53.57.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/547448/43f032f1-8344-c75f-5208-bee2ba821d39.png)
+
+作成したコメントは rdoc コマンドでドキュメント化できる。
+
+以下は README.md をトップページに、/app、/lib フォルダー配下の.rb ファイルをドキュメント化する、という意味。
+
+自動生成されたドキュメントには、アプリルート配下の/doc/app/index.html からアクセスする。
+
+```
+rdoc --mail README.md README.md
+app/**/*.rb lib/**/*.rb
+```

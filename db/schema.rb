@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2020_10_11_123630) do
+ActiveRecord::Schema.define(version: 2020_11_29_045813) do
 
   create_table "authors", options: "ENGINE=InnoDB DEFAULT CHARSET=utf8", force: :cascade do |t|
     t.bigint "user_id"
@@ -38,6 +38,19 @@ ActiveRecord::Schema.define(version: 2020_10_11_123630) do
     t.boolean "dl"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+  end
+
+  create_table "current_reviews", id: false, options: "ENGINE=InnoDB DEFAULT CHARSET=utf8", force: :cascade do |t|
+    t.bigint "id", default: 0, null: false
+    t.string "isbn"
+    t.string "title"
+    t.integer "price"
+    t.string "publish"
+    t.date "published"
+    t.boolean "dl"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.text "body"
   end
 
   create_table "fan_comments", options: "ENGINE=InnoDB DEFAULT CHARSET=utf8", force: :cascade do |t|
@@ -89,6 +102,6 @@ ActiveRecord::Schema.define(version: 2020_10_11_123630) do
   end
 
   add_foreign_key "authors", "users"
-  add_foreign_key "reviews", "books"
+  add_foreign_key "reviews", "books", on_delete: :cascade
   add_foreign_key "reviews", "users"
 end
